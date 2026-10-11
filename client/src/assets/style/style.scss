@@ -1,0 +1,918 @@
+// 전역 스타일 엔트리. common.scss(변수/리셋)를 불러온 뒤
+// 페이지 전반에 걸친 실제 스타일 규칙을 작성한다.
+@use './common';
+
+h1,
+h2,
+h3 {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+h2 {
+  font-size: 22px;
+}
+
+h3 {
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+
+.app-shell {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+
+  h1 {
+    font-size: 20px;
+    margin: 0;
+  }
+
+  &-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  &-user {
+    font-size: 14px;
+    color: var(--text-h);
+
+    &[href]:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+.app-content {
+  flex: 1;
+  padding: 24px 16px;
+}
+
+.app-footer {
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text);
+
+  a {
+    color: inherit;
+  }
+}
+
+.link {
+  color: var(--accent);
+}
+
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--bg);
+
+  &-highlight {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &-label {
+    font-size: 14px;
+    color: var(--text-h);
+  }
+
+  &-input {
+    font: inherit;
+    color: var(--text-h);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    min-width: 0;
+
+    &:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+    }
+  }
+}
+
+.success-text {
+  color: var(--success);
+  font-size: 14px;
+}
+
+.notice {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-size: 14px;
+
+  &-bar {
+    border-radius: 0;
+    text-align: center;
+  }
+}
+
+.error-text {
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.empty {
+  padding: 16px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.steps {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+
+  &-index {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  &.done .step-index {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  &.current {
+    color: var(--text-h);
+    font-weight: 600;
+
+    .step-index {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+  }
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-h);
+
+  &-me {
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  &-sm {
+    padding: 1px 8px;
+    font-size: 12px;
+  }
+
+  &-confirmed {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+}
+
+.stage-tag {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+
+  &.done {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+.my-votes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+
+  &-label {
+    font-size: 12px;
+    margin-right: 4px;
+  }
+}
+
+.temp-password {
+  font: 600 24px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 2px;
+  color: var(--text-h);
+  user-select: all;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+
+  th,
+  td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    font-weight: 600;
+    color: var(--text-h);
+  }
+}
+
+.badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.poll-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+
+  &.top,
+  &.confirmed {
+    border-color: var(--accent);
+  }
+
+  &.confirmed {
+    background: var(--accent-bg);
+  }
+}
+
+.poll-bar {
+  display: block;
+  height: 6px;
+  margin: 6px 0 4px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+
+  span {
+    display: block;
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s;
+  }
+}
+
+.btn {
+  font: inherit;
+  border-radius: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  &-secondary {
+    background: transparent;
+    color: var(--text-h);
+  }
+
+  &-sm {
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+
+  &-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  &-ghost {
+    border-color: transparent;
+    color: var(--text);
+  }
+}
+
+a.btn {
+  text-decoration: none;
+}
+
+.date-range {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+
+  > .field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &-sep {
+    padding-bottom: 10px;
+  }
+}
+
+.join-profile {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.home-layout {
+  display: grid;
+  gap: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+
+  @media (min-width: 960px) {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+}
+
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+
+  &-weekday {
+    padding: 6px 0;
+    text-align: center;
+    font-size: 13px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+
+    &.sun {
+      color: var(--danger);
+    }
+
+    &.sat {
+      color: var(--accent);
+    }
+  }
+
+  &-day {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 92px;
+    padding: 4px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+
+    &.outside {
+      opacity: 0.4;
+    }
+
+    &.today .calendar-date {
+      background: var(--accent);
+      color: #fff;
+    }
+  }
+
+  &-date {
+    display: inline-grid;
+    place-items: center;
+    align-self: flex-start;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 4px;
+    border-radius: 11px;
+    font-size: 13px;
+    color: var(--text-h);
+  }
+
+  &-event {
+    display: block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 18px;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // 일정 확정 / 날짜만 확정 / 후보 기간 순으로 진하게 → 연하게
+  &-event,
+  &-legend {
+    &.confirmed {
+      color: #fff;
+      background: var(--accent);
+    }
+
+    &.date {
+      color: var(--accent);
+      background: var(--accent-bg);
+      border: 1px dashed var(--accent);
+    }
+
+    &.candidate {
+      color: var(--text);
+      background: var(--candidate-bg);
+    }
+
+    &.proposed {
+      color: var(--text);
+      background: transparent;
+      border: 1px dashed var(--text);
+      // '모임명:닉네임's 제시' 는 길어서 두 줄까지 보여준다
+      white-space: normal;
+      word-break: keep-all;
+    }
+  }
+
+  &-legend {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+
+  &-legends {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  @media (max-width: 600px) {
+    &-day {
+      min-height: 64px;
+    }
+
+    &-event {
+      font-size: 10px;
+      padding: 0 3px;
+    }
+  }
+}
+
+.meeting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.admin-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--danger);
+  border-radius: 8px;
+
+  > .text-sm {
+    margin-right: auto;
+  }
+}
+
+.vote-picker {
+  display: grid;
+  gap: 16px;
+
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  &-title {
+    margin: 0 0 8px;
+    font-weight: 600;
+    color: var(--text-h);
+  }
+
+  &-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  &-weekday {
+    text-align: center;
+    font-size: 12px;
+
+    &.sun {
+      color: var(--danger);
+    }
+
+    &.sat {
+      color: var(--accent);
+    }
+  }
+
+  &-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 4px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text-h);
+    font: inherit;
+    cursor: pointer;
+
+    &.outside {
+      border-color: transparent;
+      color: var(--text);
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    &:disabled {
+      cursor: default;
+    }
+
+    &:not(:disabled):not(.outside):hover {
+      border-color: var(--accent);
+    }
+
+    &.top {
+      border-color: var(--accent);
+    }
+
+    &.selected {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    &.confirmed {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    // 참여자가 제안한 날짜
+    &.proposed:not(.selected) {
+      border-style: dashed;
+    }
+  }
+
+  &-date {
+    font-size: 15px;
+    line-height: 1.2;
+  }
+
+  &-count {
+    min-height: 14px;
+    font-size: 11px;
+    line-height: 14px;
+    opacity: 0.85;
+  }
+}
+
+.proposal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.proposed-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  line-height: 16px;
+  border: 1px dashed var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.deadline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-size: 14px;
+
+  &-side {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &-remaining {
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  &.soon .deadline-remaining {
+    color: var(--danger);
+  }
+
+  &.over {
+    background: transparent;
+    border: 1px solid var(--border);
+
+    .deadline-remaining {
+      color: var(--text);
+    }
+  }
+}
+
+.back-link {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-h);
+  font-size: 14px;
+  text-decoration: none;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+.field-textarea {
+  height: 120px;
+  resize: none;
+  line-height: 1.5;
+}
+
+.place-vote {
+  display: grid;
+  gap: 16px;
+
+  @media (min-width: 720px) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.region-map {
+  margin: 0;
+
+  svg {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+  }
+
+  .region {
+    fill: var(--candidate-bg);
+    stroke: var(--bg);
+    stroke-width: 1.5;
+    cursor: pointer;
+    transition: fill 0.15s;
+
+    &[data-voted] {
+      fill: var(--accent);
+    }
+
+    &:not(.disabled):hover {
+      fill: var(--accent);
+      fill-opacity: 0.45;
+    }
+
+    &:focus-visible {
+      outline: none;
+      stroke: var(--text-h);
+      stroke-width: 2.5;
+    }
+
+    &.selected {
+      fill: var(--accent);
+      fill-opacity: 1;
+    }
+
+    &.confirmed {
+      stroke: var(--text-h);
+      stroke-width: 2.5;
+    }
+
+    &.disabled {
+      cursor: default;
+    }
+  }
+
+  .region-label {
+    font-size: 15px;
+    font-weight: 600;
+    fill: var(--text-h);
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 3px;
+    pointer-events: none;
+  }
+}
+
+.region-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.region-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: default;
+  }
+
+  &:not(:disabled):hover {
+    border-color: var(--accent);
+  }
+
+  &.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  &.confirmed {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  &-all {
+    font-weight: 600;
+  }
+
+  &-count {
+    font-size: 11px;
+    opacity: 0.8;
+  }
+}
+
+.place-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--candidate-bg);
+    font-size: 14px;
+  }
+
+  b {
+    color: var(--text-h);
+  }
+
+  p {
+    margin: 4px 0 0;
+    white-space: pre-wrap;
+  }
+}
+
+// 모임 관리: 상태 필터 + 검색
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-search {
+  width: 220px;
+  max-width: 100%;
+}
+
+.admin-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// 표의 체크박스 열
+.table-check {
+  width: 1%;
+
+  input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+}
+
+.table tr.row-selected td {
+  background: var(--accent-bg);
+}

@@ -1,0 +1,26 @@
+import { HttpError } from './httpError.js'
+
+// 메모리 기반 실패 횟수 제한 (서버를 재시작하면 초기화된다)
+// key 별로 windowMs 동안 실패가 max 번 쌓이면 429
+export function createFailureLimiter({ max, windowMs, message }) {
+  const failures = new Map()
+
+  const recent = (key) => {
+    const now = Date.now()
+    const list = (failures.get(key) ?? []).filter((time) => now - time < windowMs)
+    failures.set(key, list)
+    return list
+  }
+
+  return {
+    check(key) {
+      if (recent(key).length >= max) throw new HttpError(429, message)
+    },
+    fail(key) {
+      recent(key).push(Date.now())
+    },
+    reset(key) {
+      failures.delete(key)
+    },
+  }
+}
