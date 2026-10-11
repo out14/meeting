@@ -5,6 +5,7 @@ import { loginAdmin, requireAdmin } from '../lib/adminAuth.js'
 import { HttpError } from '../lib/httpError.js'
 import { DEADLINE_COLUMN, loadTiedPlaces, settleExpiredMeetings } from '../lib/meetingFlow.js'
 import { hashPassword } from '../lib/password.js'
+import { createFailureLimiter, LOGIN_FAILURE_LIMIT } from '../lib/rateLimit.js'
 
 // 임시 비밀번호: 헷갈리는 문자(0/O, 1/l/I)를 뺀 10자
 const TEMP_PASSWORD_CHARS = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -12,9 +13,19 @@ const createTempPassword = () =>
   Array.from({ length: 10 }, () => TEMP_PASSWORD_CHARS[randomInt(TEMP_PASSWORD_CHARS.length)]).join('')
 
 const router = Router()
+const loginLimiter = createFailureLimiter(LOGIN_FAILURE_LIMIT)
 
+// 관리자 로그인: IP 기준으로 실패 횟수를 제한한다 (관리자 계정은 하나라 아이디로 나누지 않는다)
 router.post('/login', (req, res) => {
-  res.json(loginAdmin(req.body?.username, req.body?.password))
+  loginLimiter.check(req.ip)
+  try {
+    const session = loginAdmin(req.body?.username, req.body?.password)
+    loginLimiter.reset(req.ip)
+    res.json(session)
+  } catch (error) {
+    loginLimiter.fail(req.ip)
+    throw error
+  }
 })
 
 // 저장된 관리자 토큰이 아직 유효한지 확인

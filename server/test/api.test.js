@@ -4,6 +4,7 @@ import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import app from '../app.js'
 import db from '../db/db.js'
+import { outbox } from '../lib/mailer.js'
 import { hashPassword } from '../lib/password.js'
 
 // 테스트용 관리자 계정/서명 키: .env 대신 여기서 고정한다
@@ -11,6 +12,9 @@ const ADMIN_PASSWORD = 'test-password'
 process.env.ADMIN_USERNAME = 'admin'
 process.env.ADMIN_PASSWORD_HASH = hashPassword(ADMIN_PASSWORD)
 process.env.TOKEN_SECRET = 'test-secret'
+// 테스트에서는 메일을 실제로 보내지 않는다 (outbox 로 확인)
+delete process.env.SMTP_HOST
+process.env.NODE_ENV = 'test'
 
 let server
 let baseUrl
@@ -125,6 +129,37 @@ describe('관리자 / 모임 생성 권한', () => {
     assert.equal((await api('POST', '/meetings', { body, admin: `${forged}.${signature}` })).status, 401)
     assert.equal((await api('POST', '/meetings', { body, admin: `${expired}.${signature}` })).status, 401)
     assert.equal((await api('POST', '/meetings', { body, admin: `${payload}.bad` })).status, 401)
+  })
+})
+
+describe('보안', () => {
+  test('보안 헤더가 붙는다', async () => {
+    const res = await fetch(`${baseUrl}/health`)
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+    assert.ok(res.headers.get('strict-transport-security'))
+    assert.equal(res.headers.get('x-powered-by'), null)
+  })
+
+  test('회원 로그인은 같은 아이디로 15분에 10번 틀리면 막히고, 다른 아이디는 영향이 없다', async () => {
+    await api('POST', '/users', {
+      body: { username: 'lock_me', name: '잠금', nickname: '잠금', email: 'lock@test.com', password: 'rightpw1' },
+    })
+    const login = (username, password) => api('POST', '/users/login', { body: { username, password } })
+    for (let i = 0; i < 10; i += 1) assert.equal((await login('lock_me', `wrong${i}`)).status, 401)
+    // 막힌 뒤에는 맞는 비밀번호도 429
+    assert.equal((await login('lock_me', 'rightpw1')).status, 429)
+    assert.equal((await login('other_user', 'whatever')).status, 401)
+  })
+
+  test('실명은 같은 모임 참여자·관리자에게만 보인다', async () => {
+    const { code, host, member } = await setupMeeting()
+    const names = async (opts) => (await api('GET', `/meetings/${code}`, opts)).data.members.map((m) => m.name)
+    assert.deepEqual(await names({}), [null, null])
+    const outsider = await signup('구경꾼')
+    assert.deepEqual(await names({ user: outsider }), [null, null])
+    assert.deepEqual(await names({ user: member }), ['김철수', `회원${userSeq - 1}`])
+    assert.deepEqual(await names({ token: host }), ['김철수', `회원${userSeq - 1}`])
+    assert.deepEqual(await names({ admin: adminToken }), ['김철수', `회원${userSeq - 1}`])
   })
 })
 
@@ -327,23 +362,35 @@ describe('비밀번호 변경 / 재설정', () => {
   })
 })
 
-describe('비밀번호 찾기 (이름 + 이메일)', () => {
-  const verify = (body) => api('POST', '/users/password-reset/verify', { body })
+describe('비밀번호 찾기 (메일 링크)', () => {
+  const request = (email) => api('POST', '/users/password-reset/request', { body: { email } })
+  const check = (resetToken) => api('POST', '/users/password-reset/check', { body: { resetToken } })
   const reset = (body) => api('POST', '/users/password-reset', { body })
+  // 보낸 메일의 링크에서 재설정 토큰을 꺼낸다
+  const tokenFromMail = (to) => {
+    const mail = [...outbox].reverse().find((item) => item.to === to)
+    return mail && decodeURIComponent(mail.text.match(/token=([^\s]+)/)[1])
+  }
 
-  test('이름과 이메일이 맞으면 새 비밀번호로 바꾸고, 기존 로그인은 끊긴다', async () => {
+  test('가입 이메일로 재설정 링크를 보내고, 링크로 새 비밀번호를 정하면 기존 로그인은 끊긴다', async () => {
     const { data: signed } = await api('POST', '/users', {
       body: { username: 'find_me', name: '찾는이', nickname: '찾기', email: 'find@test.com', password: 'oldpass1' },
     })
-    assert.equal((await verify({ name: '다른이름', email: 'find@test.com' })).status, 400)
-    assert.equal((await verify({ name: '찾는이', email: 'nobody@test.com' })).status, 400)
-    assert.equal((await verify({ name: '찾는이' })).status, 400)
+    // 가입 여부와 상관없이 같은 응답 (없는 이메일엔 메일이 가지 않는다)
+    const before = outbox.length
+    assert.deepEqual((await request('nobody@test.com')).data, { ok: true })
+    assert.equal(outbox.length, before)
+    assert.equal((await request('not-an-email')).status, 400)
 
-    const ok = await verify({ name: ' 찾는이 ', email: 'FIND@test.com' })
-    assert.equal(ok.status, 200)
-    assert.equal(ok.data.username, 'find_me')
-    const { resetToken } = ok.data
+    assert.equal((await request('FIND@test.com')).status, 200)
+    const mail = [...outbox].reverse().find((item) => item.to === 'find@test.com')
+    assert.match(mail.subject, /비밀번호 재설정/)
+    assert.match(mail.text, /아이디: find_me/)
+    assert.match(mail.text, /\/find-password\/reset\?token=/)
+    const resetToken = tokenFromMail('find@test.com')
 
+    assert.deepEqual(Object.keys((await check(resetToken)).data).sort(), ['expiresAt', 'username'])
+    assert.equal((await check('forged.token')).status, 400)
     assert.equal((await reset({ resetToken, newPassword: '123' })).status, 400)
     assert.equal((await reset({ resetToken: 'forged.token', newPassword: 'newpass1' })).status, 400)
     // 로그인 토큰은 재설정 토큰으로 쓸 수 없다
@@ -353,19 +400,16 @@ describe('비밀번호 찾기 (이름 + 이메일)', () => {
     assert.equal(done.status, 200)
     assert.equal(done.data.user.username, 'find_me')
     assert.equal((await api('GET', '/users/me', { user: signed.token })).status, 401)
-    assert.equal((await api('GET', '/users/me', { user: done.data.token })).status, 200)
     assert.equal((await api('POST', '/users/login', { body: { username: 'find_me', password: 'newpass1' } })).status, 200)
 
-    // 같은 재설정 토큰은 한 번만 쓸 수 있다
+    // 같은 링크는 한 번만 쓸 수 있다
+    assert.equal((await check(resetToken)).status, 400)
     assert.equal((await reset({ resetToken, newPassword: 'another1' })).status, 400)
   })
 
-  test('15분 안에 5번 틀리면 429', async () => {
-    await api('POST', '/users', {
-      body: { username: 'brute_me', name: '진짜', nickname: '무차별', email: 'brute@test.com', password: 'secret12' },
-    })
-    for (let i = 0; i < 5; i += 1) assert.equal((await verify({ name: `가짜${i}`, email: 'brute@test.com' })).status, 400)
-    assert.equal((await verify({ name: '진짜', email: 'brute@test.com' })).status, 429)
+  test('같은 이메일로 15분에 5번까지만 요청할 수 있다', async () => {
+    for (let i = 0; i < 5; i += 1) assert.equal((await request('spam@test.com')).status, 200)
+    assert.equal((await request('spam@test.com')).status, 429)
   })
 })
 
@@ -1047,5 +1091,17 @@ describe('투표 마감', () => {
     const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
     assert.equal(listed.stage, 'PLACE')
     assert.deepEqual([listed.startDate, listed.endDate], ['2026-12-18', '2026-12-18'])
+  })
+})
+
+// 관리자 로그인 제한은 IP 기준이라 다른 테스트에 영향이 없도록 맨 마지막에 둔다
+describe('관리자 로그인 제한', () => {
+  test('15분에 10번 틀리면 맞는 비밀번호로도 막힌다 (이미 받은 토큰은 그대로 쓸 수 있다)', async () => {
+    const login = (password) => api('POST', '/admin/login', { body: { username: 'admin', password } })
+    // 앞선 테스트에서 틀린 횟수(3번)를 포함해 10번까지
+    let status = 401
+    for (let i = 0; i < 10 && status === 401; i += 1) status = (await login(`wrong${i}`)).status
+    assert.equal((await login(ADMIN_PASSWORD)).status, 429)
+    assert.equal((await api('GET', '/admin/me', { admin: adminToken })).status, 200)
   })
 })

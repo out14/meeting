@@ -1,9 +1,10 @@
 import { Router } from 'express'
 import db from '../db/db.js'
 import { HttpError, requireText } from '../lib/httpError.js'
+import { sendMail } from '../lib/mailer.js'
 import { hashPassword, verifyPassword } from '../lib/password.js'
 import { settleExpiredMeetings } from '../lib/meetingFlow.js'
-import { createFailureLimiter } from '../lib/rateLimit.js'
+import { createFailureLimiter, LOGIN_FAILURE_LIMIT } from '../lib/rateLimit.js'
 import { createSignedToken, readSignedToken } from '../lib/signedToken.js'
 import { createUserToken, requireUser, toPublicUser, USER_COLUMNS } from '../lib/userAuth.js'
 
@@ -18,14 +19,33 @@ const toSession = (user) => {
   return { token, expiresAt, user: toPublicUser(user) }
 }
 
-// 비밀번호 찾기: 이름 + 이메일 확인 → 10분짜리 재설정 토큰 → 새 비밀번호
+// 비밀번호 찾기: 가입 이메일로 재설정 링크(30분)를 보낸다 → 링크에서 새 비밀번호
 // 재설정 토큰에 token_version 을 넣어, 한 번 쓰면(버전이 오르면) 다시 쓸 수 없게 한다
-const RESET_TOKEN_TTL_HOURS = 10 / 60
+const RESET_TOKEN_TTL_MINUTES = 30
+// 같은 IP·이메일로 15분에 5번까지만 메일을 보낸다 (메일 폭탄 방지)
 const resetLimiter = createFailureLimiter({
   max: 5,
   windowMs: 15 * 60 * 1000,
-  message: '시도 횟수가 너무 많습니다. 15분 뒤에 다시 시도해 주세요.',
+  message: '요청이 너무 많습니다. 15분 뒤에 다시 시도해 주세요.',
 })
+// 메일 속 링크의 사이트 주소 (배포 시 실제 도메인)
+const appUrl = () => (process.env.APP_URL ?? process.env.CLIENT_ORIGIN ?? 'http://localhost:5173').replace(/\/$/, '')
+
+function resetMail(user, link) {
+  const text = [
+    `${user.nickname} 님, 안녕하세요.`,
+    '',
+    `요정 정모 비밀번호 재설정 요청을 받았어요. 아이디: ${user.username}`,
+    `아래 링크에서 ${RESET_TOKEN_TTL_MINUTES}분 안에 새 비밀번호를 설정해 주세요.`,
+    '',
+    link,
+    '',
+    '본인이 요청하지 않았다면 이 메일을 무시해 주세요. 비밀번호는 바뀌지 않아요.',
+  ].join('\n')
+  return { to: user.email, subject: '[요정 정모] 비밀번호 재설정 안내', text }
+}
+
+const loginLimiter = createFailureLimiter(LOGIN_FAILURE_LIMIT)
 
 const readUsername = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
 
@@ -78,29 +98,43 @@ router.post('/', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   const username = readUsername(req.body?.username)
+  const limitKey = `${req.ip}:${username}`
+  loginLimiter.check(limitKey)
   const [[row]] = await db.query(`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE username = ?`, [username])
   if (!row || !verifyPassword(req.body?.password, row.password_hash)) {
+    loginLimiter.fail(limitKey)
     throw new HttpError(401, '아이디 또는 비밀번호가 올바르지 않습니다.')
   }
+  loginLimiter.reset(limitKey)
   res.json(toSession(row))
 })
 
-router.post('/password-reset/verify', async (req, res) => {
-  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
-  if (!name) throw new HttpError(400, '이름을 입력해 주세요.')
+// 재설정 메일 요청. 가입된 이메일인지와 상관없이 같은 응답을 준다 (가입 여부를 알 수 없게)
+// 메일은 응답과 따로 보내, 응답 시간으로도 가입 여부가 드러나지 않게 한다
+router.post('/password-reset/request', async (req, res) => {
   const email = readEmail(req.body?.email)
-
   const limitKey = `${req.ip}:${email}`
   resetLimiter.check(limitKey)
-  const [[user]] = await db.query(`SELECT ${USER_COLUMNS} FROM users WHERE email = ? AND name = ?`, [email, name])
-  if (!user) {
-    resetLimiter.fail(limitKey)
-    throw new HttpError(400, '이름과 이메일이 일치하는 회원이 없습니다.')
-  }
-  resetLimiter.reset(limitKey)
+  resetLimiter.fail(limitKey)
 
-  const { token, expiresAt } = createSignedToken('reset', `${user.id}:${user.tokenVersion}`, RESET_TOKEN_TTL_HOURS)
-  res.json({ resetToken: token, expiresAt, username: user.username })
+  const [[user]] = await db.query(`SELECT ${USER_COLUMNS} FROM users WHERE email = ?`, [email])
+  if (user) {
+    const { token } = createSignedToken('reset', `${user.id}:${user.tokenVersion}`, RESET_TOKEN_TTL_MINUTES / 60)
+    const link = `${appUrl()}/find-password/reset?token=${encodeURIComponent(token)}`
+    sendMail(resetMail(user, link)).catch((error) => console.error('재설정 메일 발송 실패:', error.message))
+  }
+  res.json({ ok: true })
+})
+
+// 재설정 링크 확인: 링크가 아직 쓸 수 있는지 (아이디 표시용)
+router.post('/password-reset/check', async (req, res) => {
+  const session = readSignedToken(req.body?.resetToken, 'reset')
+  const [id, version] = typeof session?.subject === 'string' ? session.subject.split(':').map(Number) : []
+  const [[user]] = id ? await db.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`, [id]) : [[]]
+  if (!user || user.tokenVersion !== version) {
+    throw new HttpError(400, '재설정 링크가 만료됐거나 이미 사용됐어요. 비밀번호 찾기를 다시 해 주세요.')
+  }
+  res.json({ username: user.username, expiresAt: session.expiresAt })
 })
 
 // 새 비밀번호 설정. 기존 로그인은 모두 끊고, 이 기기는 새 비밀번호로 로그인시킨다

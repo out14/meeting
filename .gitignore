@@ -23,5 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 
-# env
+# env: 실제 값이 들어가는 파일은 모두 제외하고 예시 파일만 올린다
 .env
+.env.*
+!.env.example
+
+# 빌드·테스트 산출물
+*.tsbuildinfo
+coverage

@@ -60,8 +60,19 @@ export function useChangePassword() {
   })
 }
 
-export function useVerifyReset() {
-  return useMutation({ mutationFn: userController.verifyReset })
+export function useRequestReset() {
+  return useMutation({ mutationFn: userController.requestReset })
+}
+
+// 재설정 링크 확인 (만료·사용 여부). 다시 시도하지 않는다
+export function useResetLink(resetToken: string) {
+  return useQuery({
+    queryKey: ['user', 'reset-link', resetToken],
+    queryFn: () => userController.checkReset(resetToken),
+    enabled: !!resetToken,
+    retry: false,
+    staleTime: Infinity,
+  })
 }
 
 // 재설정에 성공하면 새 비밀번호로 로그인된다

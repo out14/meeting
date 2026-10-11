@@ -34,15 +34,10 @@ export interface ChangePasswordParams {
   newPassword: string
 }
 
-export interface VerifyResetParams {
-  name: string
-  email: string
-}
-
-export interface VerifyResetResult {
-  resetToken: string
-  expiresAt: number
+// 메일 속 재설정 링크가 아직 쓸 수 있으면 아이디와 만료 시각
+export interface ResetLinkInfo {
   username: string
+  expiresAt: number
 }
 
 export interface ResetPasswordParams {
@@ -80,8 +75,9 @@ export const userController = {
   getMe: () => httpClient.get<User>('/users/me', userTokenConfig()),
   changePassword: (params: ChangePasswordParams) =>
     httpClient.put<UserSession>('/users/me/password', params, userTokenConfig()),
-  // 비밀번호 찾기: 이름 + 이메일 확인 → 재설정 토큰(10분) → 새 비밀번호
-  verifyReset: (params: VerifyResetParams) => httpClient.post<VerifyResetResult>('/users/password-reset/verify', params),
+  // 비밀번호 찾기: 가입 이메일로 재설정 링크(30분) 발송 → 링크 확인 → 새 비밀번호
+  requestReset: (email: string) => httpClient.post<{ ok: true }>('/users/password-reset/request', { email }),
+  checkReset: (resetToken: string) => httpClient.post<ResetLinkInfo>('/users/password-reset/check', { resetToken }),
   resetPassword: (params: ResetPasswordParams) => httpClient.post<UserSession>('/users/password-reset', params),
   getMyMeetings: () => httpClient.get<MyMeetings>('/users/me/meetings', userTokenConfig()),
 }

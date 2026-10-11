@@ -9,7 +9,8 @@ export type MemberRole = 'HOST' | 'MEMBER'
 
 export interface Member {
   id: number
-  name: string
+  // 실명: 같은 모임 참여자·관리자에게만 내려온다 (그 밖에는 null)
+  name: string | null
   nickname: string
   role: MemberRole
 }

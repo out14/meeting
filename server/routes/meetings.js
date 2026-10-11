@@ -116,10 +116,13 @@ router.use('/:code', loadMeeting)
 
 // 모임 정보 + 참여자 목록. 유효한 토큰이면 me 에 본인 정보가 담긴다
 router.get('/:code', async (req, res) => {
-  const [members] = await db.query(
+  const [rows] = await db.query(
     'SELECT id, name, nickname, role FROM meeting_members WHERE meeting_id = ? ORDER BY id',
     [req.meeting.id],
   )
+  // 실명은 같은 모임 참여자와 관리자에게만 보여준다 (초대 링크만 아는 사람에게는 닉네임만)
+  const canSeeNames = !!req.member || !!readAdmin(req)
+  const members = rows.map((member) => ({ ...member, name: canSeeNames ? member.name : null }))
   const [[place]] = await db.query(
     `SELECT o.label, o.memo
        FROM polls p JOIN poll_options o ON o.id = p.confirmed_option_id
