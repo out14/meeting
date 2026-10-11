@@ -5,6 +5,8 @@ export const dbConfig = {
   port: Number(process.env.DB_PORT ?? 3306),
   user: process.env.DB_USER ?? 'root',
   password: process.env.DB_PASSWORD || undefined,
+  // AWS RDS 는 DB_SSL=true 로 암호화 연결 (mysql2 에 내장된 RDS 인증서로 서버를 검증한다)
+  ...(process.env.DB_SSL === 'true' && { ssl: 'Amazon RDS' }),
 }
 
 export const dbName = process.env.DB_NAME ?? 'meeting'
