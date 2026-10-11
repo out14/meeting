@@ -5,7 +5,8 @@ import { useLogin, useUser } from '@src/api/hooks/useUser'
 import { Button } from '@src/components/Button'
 import { TextField } from '@src/components/TextField'
 import { readRedirect, withRedirect } from '@src/pages/auth/redirect'
-import logo from '@src/assets/images/logo-cutout.png'
+// 로그인 화면 로고: 누끼(logo-cutout.png)를 320px 로 줄인 것 (화면에는 160px, 고해상도 대비 2배)
+import logo from '@src/assets/images/logo-login.png'
 
 // 회원 로그인 화면
 export function LoginPage() {
