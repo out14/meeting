@@ -1,5 +1,7 @@
 # 요정 정모 배포 가이드 (AWS EC2 + RDS, IP 접속)
 
+> 배포·브랜치·커밋 규칙은 [DEPLOY_CONVENTION.md](DEPLOY_CONVENTION.md)를 보세요.
+
 EC2 한 대에 도커로 화면과 API 서버를 올리고, DB는 RDS(MySQL)를 씁니다. 처음 한 번은 1~8단계를 순서대로 하고, 이후 업데이트는 [9. 업데이트 배포](#9-업데이트-배포)만 하면 됩니다. [11. 자동 배포](#11-자동-배포-cicd-github-actions)를 설정하면 `main` 에 푸시하는 것만으로 배포됩니다.
 
 ```
