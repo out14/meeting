@@ -57,6 +57,15 @@ export function useCloseVote(code: string) {
   })
 }
 
+// 참여 취소 (마이페이지 목록에서 쓰므로 code 는 호출할 때 받는다)
+export function useLeaveMeeting() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (code: string) => meetingController.leave(code),
+    onSuccess: () => refreshMeetingData(queryClient),
+  })
+}
+
 // 장소 투표 지금 마감: 모임 단계와 장소 결과가 바뀐다
 export function useClosePlaceVote(code: string) {
   const queryClient = useQueryClient()

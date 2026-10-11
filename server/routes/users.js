@@ -3,7 +3,7 @@ import db, { withTransaction } from '../db/db.js'
 import { HttpError, requireText } from '../lib/httpError.js'
 import { sendMail } from '../lib/mailer.js'
 import { hashPassword, verifyPassword } from '../lib/password.js'
-import { settleExpiredMeetings } from '../lib/meetingFlow.js'
+import { removeMembers, settleExpiredMeetings } from '../lib/meetingFlow.js'
 import { createFailureLimiter, LOGIN_FAILURE_LIMIT } from '../lib/rateLimit.js'
 import { createSignedToken, readSignedToken } from '../lib/signedToken.js'
 import { createUserToken, requireUser, toPublicUser, USER_COLUMNS } from '../lib/userAuth.js'
@@ -164,9 +164,7 @@ router.get('/me', requireUser, (req, res) => {
 
 // 회원 탈퇴: 비밀번호를 다시 확인한 뒤 회원과 참여 기록을 지운다
 // - 내가 개설한(모임장인) 모임은 함께 삭제 (모임장 없는 모임이 남지 않게)
-// - 다른 모임에서는 참여자·투표가 지워진다 (FK CASCADE)
-// - 내가 제시한 날짜에 다른 사람 표가 있으면, 그 날짜는 표를 준 다른 참여자의 제시로 넘겨 남긴다
-//   (그대로 두면 proposed_by 가 NULL 이 되어 모임장이 정한 후보 날짜처럼 보인다)
+// - 다른 모임에서는 참여자·투표가 지워진다 (참여 취소와 같은 처리, meetingFlow.removeMembers)
 router.delete('/me', requireUser, async (req, res) => {
   const [[{ password_hash: hash }]] = await db.query('SELECT password_hash FROM users WHERE id = ?', [req.user.id])
   if (!verifyPassword(req.body?.password, hash)) throw new HttpError(400, '비밀번호가 올바르지 않습니다.')
@@ -178,19 +176,9 @@ router.delete('/me', requireUser, async (req, res) => {
     )
     if (hosted.length) await conn.query('DELETE FROM meetings WHERE id IN (?)', [hosted.map((meeting) => meeting.id)])
 
+    // 참여한 다른 모임에서는 빠진다 (내 표·선택지 정리는 removeMembers 참고)
     const [members] = await conn.query('SELECT id FROM meeting_members WHERE user_id = ?', [req.user.id])
-    const memberIds = members.map((member) => member.id)
-    if (memberIds.length) {
-      await conn.query('DELETE FROM votes WHERE member_id IN (?)', [memberIds])
-      // 표가 남은 내 제시 날짜는 가장 먼저 표를 준 다른 참여자의 제시로
-      await conn.query(
-        `UPDATE poll_options o
-            SET o.proposed_by = (SELECT v.member_id FROM votes v WHERE v.option_id = o.id ORDER BY v.id LIMIT 1)
-          WHERE o.proposed_by IN (?) AND EXISTS (SELECT 1 FROM votes v WHERE v.option_id = o.id)`,
-        [memberIds],
-      )
-      await conn.query('DELETE FROM poll_options WHERE proposed_by IN (?)', [memberIds])
-    }
+    await removeMembers(conn, members.map((member) => member.id))
     await conn.query('DELETE FROM users WHERE id = ?', [req.user.id])
     return hosted.length
   })
@@ -258,6 +246,8 @@ router.get('/me/meetings', requireUser, async (req, res) => {
     hosted: list.filter((meeting) => meeting.role === 'HOST'),
     // 투표를 한 번이라도 한 모임
     voted: list.filter((meeting) => Object.values(meeting.votes).some((votes) => votes.length)),
+    // 참여자로 들어간 모임 (투표 여부와 상관없이, 마이페이지 '내가 참여한 모임')
+    joined: list.filter((meeting) => meeting.role === 'MEMBER'),
   })
 })
 

@@ -6,7 +6,7 @@ import { ChangePasswordForm } from '@src/pages/mypage/ChangePasswordForm'
 import { MyMeetingList } from '@src/pages/mypage/MyMeetingList'
 import { WithdrawSection } from '@src/pages/mypage/WithdrawSection'
 
-// 마이페이지: 내가 개설한 모임, 내가 참여한 투표(취소 가능), 비밀번호 변경, 회원 탈퇴
+// 마이페이지: 내가 개설한 모임, 내가 참여한 모임(참여 취소 가능), 비밀번호 변경, 회원 탈퇴
 export function MyPage() {
   const { data: user, isPending } = useUser()
   const myMeetings = useMyMeetings()
@@ -45,10 +45,10 @@ export function MyPage() {
         <>
           <MyMeetingList title="내가 개설한 모임" meetings={myMeetings.data.hosted} emptyText="아직 개설한 모임이 없어요." />
           <MyMeetingList
-            title="내가 참여한 투표"
-            meetings={myMeetings.data.voted}
-            emptyText="아직 투표한 모임이 없어요."
-            showVotes
+            title="내가 참여한 모임"
+            meetings={myMeetings.data.joined}
+            emptyText="아직 참여한 모임이 없어요."
+            joined
           />
         </>
       )}

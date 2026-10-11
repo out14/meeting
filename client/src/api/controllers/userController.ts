@@ -66,7 +66,10 @@ export interface MyMeeting {
 
 export interface MyMeetings {
   hosted: MyMeeting[]
+  // 투표를 한 번이라도 한 모임 (내가 개설한 모임 포함)
   voted: MyMeeting[]
+  // 참여자로 들어간 모임 (투표 여부와 상관없이)
+  joined: MyMeeting[]
 }
 
 export const userController = {

@@ -45,16 +45,6 @@ export function useVoteDates(code: string) {
   })
 }
 
-// 마이페이지 투표 취소: 그 모임에서 진행 중인 투표(날짜 / 장소)의 내 표를 모두 뺀다 (빈 투표 저장)
-export function useCancelVote() {
-  const invalidate = useRefreshAfterVote()
-  return useMutation({
-    mutationFn: ({ code, type }: { code: string; type: PollType }) =>
-      type === 'date' ? pollController.voteDates(code, []) : pollController.vote(code, type, []),
-    onSuccess: invalidate,
-  })
-}
-
 export function useConfirmPoll(code: string, type: PollType) {
   const queryClient = useQueryClient()
   return useMutation({

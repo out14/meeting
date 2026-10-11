@@ -45,6 +45,28 @@ const addDays = (value, days) => {
   return date.toISOString().slice(0, 10)
 }
 
+// 참여자를 모임에서 뺀다 (참여 취소, 회원 탈퇴): 그 참여자의 표를 지우고, 참여자가 만든 선택지를 정리한 뒤 명단에서 지운다
+// - 다른 사람 표가 남은 선택지(제시 날짜·처음 고른 지역)는 가장 먼저 표를 준 참여자 것으로 넘겨 남긴다
+//   (그대로 두면 proposed_by 가 NULL 이 되어 날짜는 모임장이 정한 후보처럼 보인다)
+// - 표가 없어진 선택지는 지운다. 단, 이미 확정된 선택지는 확정 결과가 사라지지 않도록 남긴다
+export async function removeMembers(conn, memberIds) {
+  if (!memberIds.length) return
+  await conn.query('DELETE FROM votes WHERE member_id IN (?)', [memberIds])
+  await conn.query(
+    `UPDATE poll_options o
+        SET o.proposed_by = (SELECT v.member_id FROM votes v WHERE v.option_id = o.id ORDER BY v.id LIMIT 1)
+      WHERE o.proposed_by IN (?) AND EXISTS (SELECT 1 FROM votes v WHERE v.option_id = o.id)`,
+    [memberIds],
+  )
+  await conn.query(
+    `DELETE FROM poll_options
+      WHERE proposed_by IN (?) AND id NOT IN (SELECT confirmed_option_id FROM polls WHERE confirmed_option_id IS NOT NULL)`,
+    [memberIds],
+  )
+  // 남은 확정 선택지의 proposed_by 는 FK(ON DELETE SET NULL)로 비워진다
+  await conn.query('DELETE FROM meeting_members WHERE id IN (?)', [memberIds])
+}
+
 // 모임장이 정한 후보 날짜 = 모임장이 투표한 날짜. 모임장이 날짜를 고치면 '제시'가 아니라 후보 날짜 '수정'이다
 // - 빠진 후보 날짜는 지운다 (그 날짜의 다른 참여자 표도 함께 사라진다)
 // - 새 날짜는 후보로 추가하고, 참여자가 제안했던 날짜를 고르면 후보로 바뀐다 (그 참여자의 표는 유지)

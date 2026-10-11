@@ -114,6 +114,8 @@ export const meetingController = {
       headers: { ...memberTokenConfig(code)?.headers, ...adminTokenConfig()?.headers },
     }),
   getDetail: (code: string) => httpClient.get<Meeting>(`/meetings/${code}`, memberTokenConfig(code)),
+  // 참여 취소 (모임장 제외): 내 표를 모두 지우고 참여자 명단에서 빠진다
+  leave: (code: string) => httpClient.delete(`/meetings/${code}/members/me`, memberTokenConfig(code)),
   // 로그인한 회원으로 참여 (이름/닉네임은 회원 정보를 쓴다)
   join: (code: string) => httpClient.post(`/meetings/${code}/members`, undefined, memberTokenConfig(code)),
 }

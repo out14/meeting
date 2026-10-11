@@ -341,26 +341,59 @@ describe('회원 탈퇴', () => {
   })
 })
 
-describe('마이페이지 투표 취소 (빈 투표 저장)', () => {
-  test('참여자는 날짜 투표를 취소할 수 있고, 제시한 날짜도 함께 사라진다', async () => {
+describe('참여 취소 (모임 나가기)', () => {
+  const leave = (code, opts) => api('DELETE', `/meetings/${code}/members/me`, opts)
+
+  test('내 표가 모두 지워지고 참여자 명단에서 빠지며, 초대 링크로 다시 참여할 수 있다', async () => {
     const { code, member } = await setupMeeting()
     await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: ['2026-12-18', '2026-12-30'] }, user: member })
-    assert.equal((await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: [] }, user: member })).status, 200)
-    const poll = (await api('GET', `/meetings/${code}/polls/date`, { user: member })).data
-    assert.deepEqual(poll.myOptionIds, [])
-    assert.equal(poll.options.some((option) => option.date === '2026-12-30'), false)
+    assert.equal((await api('GET', '/users/me/meetings', { user: member })).data.joined.length, 1)
+
+    assert.equal((await leave(code, { user: member })).status, 200)
+    const meeting = (await api('GET', `/meetings/${code}`, { user: member })).data
+    assert.equal(meeting.me, null)
+    assert.equal(meeting.members.length, 1)
+    const poll = (await api('GET', `/meetings/${code}/polls/date`)).data
+    // 후보 날짜엔 모임장 표만, 내가 제시한 12/30 은 사라짐
+    assert.deepEqual(poll.options.map((option) => [option.date, option.count]), [
+      ['2026-12-18', 1],
+      ['2026-12-19', 1],
+      ['2026-12-20', 1],
+    ])
     const mine = (await api('GET', '/users/me/meetings', { user: member })).data
-    assert.equal(mine.voted.some((item) => item.code === code), false)
+    assert.equal(mine.joined.length, 0)
+    // 다시 나갈 수는 없고(참여자 아님), 다시 참여는 된다
+    assert.equal((await leave(code, { user: member })).status, 401)
+    assert.equal((await api('POST', `/meetings/${code}/members`, { user: member })).status, 201)
   })
 
-  test('장소 투표도 취소할 수 있고 의견도 함께 지워진다', async () => {
+  test('모임장은 나갈 수 없다', async () => {
+    const { code, host } = await setupMeeting()
+    assert.equal((await leave(code, { token: host })).status, 403)
+  })
+
+  test('다른 사람 표가 있는 제시 날짜는 남고, 확정된 장소는 나가도 그대로다', async () => {
     const { code, host, member } = await setupMeeting()
+    const other = await signup('남는이')
+    await api('POST', `/meetings/${code}/members`, { user: other })
+    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: ['2026-12-25'] }, user: member })
+    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: ['2026-12-25'] }, user: other })
+    let poll = (await api('GET', `/meetings/${code}/polls/date`)).data
+    assert.equal(poll.options.find((option) => option.date === '2026-12-25').proposedBy, '영희')
+
+    // 날짜 확정 → 장소: 나가는 사람만 '제주'를 골랐고, 그 지역으로 확정
     await api('POST', `/meetings/${code}/polls/date/confirm`, { body: { startDate: '2026-12-18' }, token: host })
-    await api('POST', `/meetings/${code}/polls/place/places`, { body: { regions: ['부산'], comment: '바다' }, user: member })
-    assert.equal((await api('PUT', `/meetings/${code}/polls/place/votes`, { body: { optionIds: [] }, user: member })).status, 200)
-    const poll = (await api('GET', `/meetings/${code}/polls/place`, { user: member })).data
-    assert.deepEqual(poll.myOptionIds, [])
-    assert.equal(poll.myComment, null)
+    await api('POST', `/meetings/${code}/polls/place/places`, { body: { regions: ['제주'] }, user: member })
+    const jeju = (await api('GET', `/meetings/${code}/polls/place`)).data.options.find((option) => option.label === '제주')
+    await api('POST', `/meetings/${code}/polls/place/confirm`, { body: { optionId: jeju.id }, token: host })
+
+    assert.equal((await leave(code, { user: member })).status, 200)
+    poll = (await api('GET', `/meetings/${code}/polls/date`)).data
+    const christmas = poll.options.find((option) => option.date === '2026-12-25')
+    assert.equal(christmas.proposedBy, '남는이')
+    assert.equal(christmas.count, 1)
+    const meeting = (await api('GET', `/meetings/${code}`)).data
+    assert.equal(meeting.confirmed.place.label, '제주')
   })
 })
 

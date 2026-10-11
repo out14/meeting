@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import db, { withTransaction } from '../db/db.js'
 import { readAdmin } from '../lib/adminAuth.js'
-import { createInviteCode, createMemberToken, loadMeeting, requireHost } from '../lib/auth.js'
+import { createInviteCode, createMemberToken, loadMeeting, requireHost, requireMember } from '../lib/auth.js'
 import { readCandidateRange, readDateRange } from '../lib/dates.js'
 import { defaultPlaceDeadline, startOfDay } from '../lib/placeDeadline.js'
 import {
@@ -11,6 +11,7 @@ import {
   PLACE_DEADLINE_COLUMN,
   readPlaceDeadline,
   readVoteDeadline,
+  removeMembers,
   setHostCandidates,
   settleExpiredMeetings,
   toDbDateTime,
@@ -229,6 +230,13 @@ router.patch('/:code/dates', requireHost, async (req, res) => {
 // 모임 삭제 (모임장 또는 관리자). 참여자, 투표, 선택지, 투표 기록은 FK CASCADE 로 함께 지워진다
 router.delete('/:code', requireHostOrAdmin, async (req, res) => {
   await db.query('DELETE FROM meetings WHERE id = ?', [req.meeting.id])
+  res.json({ ok: true })
+})
+
+// 참여 취소 (모임장 제외): 내 표를 모두 지우고 참여자 명단에서 빠진다. 다시 참여하려면 초대 링크로 들어온다
+router.delete('/:code/members/me', requireMember, async (req, res) => {
+  if (req.member.role === 'HOST') throw new HttpError(403, '모임장은 모임을 나갈 수 없어요. 모임을 삭제해 주세요.')
+  await withTransaction((conn) => removeMembers(conn, [req.member.id]))
   res.json({ ok: true })
 })
 
