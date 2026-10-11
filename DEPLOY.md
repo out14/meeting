@@ -1,14 +1,18 @@
 # 요정 정모 배포 가이드 (AWS EC2 + RDS, IP 접속)
 
-EC2 한 대에 화면과 API 서버를 올리고, DB는 RDS(MySQL)를 씁니다. 처음 한 번은 1~8단계를 순서대로 하고, 이후 업데이트는 [9. 업데이트 배포](#9-업데이트-배포)만 하면 됩니다.
+EC2 한 대에 도커로 화면과 API 서버를 올리고, DB는 RDS(MySQL)를 씁니다. 처음 한 번은 1~8단계를 순서대로 하고, 이후 업데이트는 [9. 업데이트 배포](#9-업데이트-배포)만 하면 됩니다.
 
 ```
-사용자 ──HTTP──▶ EC2: Nginx ─┬─ /      → 화면 파일 (/var/www/meeting)
-                             └─ /api   → Node 서버 (127.0.0.1:4000, PM2)
+사용자 ──HTTP:80──▶ EC2 (도커)
+                     ├─ web 컨테이너: Nginx ─┬─ /      → 화면 파일
+                     │                      └─ /api   → server 컨테이너
+                     └─ server 컨테이너: Node API (시작할 때 DB 마이그레이션 자동)
                                              │
                                              ▼
                                   RDS MySQL (EC2에서만 접속 가능)
 ```
+
+EC2에는 **도커만** 설치합니다. Node, Nginx 설치와 서버 상시 실행·자동 재시작은 컨테이너가 맡습니다. 관련 파일은 `docker-compose.yml`, `server/Dockerfile`, `client/Dockerfile`, `deploy/nginx.conf` 입니다.
 
 > **비용:** EC2·RDS 무료 사용 조건(프리 티어/크레딧)은 AWS 계정을 만든 시기에 따라 다릅니다. 시작 전에 콘솔의 **결제 및 비용 관리 → 프리 티어**에서 확인하세요. 탄력적 IP(고정 IP)는 시간당 소액 요금이 붙습니다.
 
@@ -44,7 +48,7 @@ AWS 콘솔 → **RDS → 데이터베이스 생성**
 
 | 항목 | 값 |
 |---|---|
-| 생성 방식 | 표준 생성 |
+| 생성 방식 | **전체 구성** (예전 콘솔에서는 "표준 생성") |
 | 엔진 | **MySQL**, 버전 8.4.x (최신) |
 | 템플릿 | **프리 티어** (없으면 개발/테스트) |
 | DB 인스턴스 식별자 | `meeting-db` |
@@ -63,34 +67,35 @@ AWS 콘솔 → **RDS → 데이터베이스 생성**
 
 ---
 
-## 3. EC2 접속 & 프로그램 설치
+## 3. EC2 접속 & 도커 설치
 
-내 컴퓨터 터미널에서:
+내 컴퓨터 터미널에서 (`.pem` 파일이 있는 폴더에서):
 
 ```bash
-chmod 400 ~/Downloads/meeting-key.pem
-ssh -i ~/Downloads/meeting-key.pem ubuntu@<EC2_IP>
+chmod 400 meeting-key.pem        # 처음 한 번. 키 파일을 나만 읽을 수 있게 (안 하면 접속 거부)
+ssh -i meeting-key.pem ubuntu@<EC2_IP>
 ```
 
-EC2 안에서(이하 모든 명령은 EC2에서 실행):
+처음 접속할 때 `yes/no` 를 물으면 `yes`. `ubuntu@ip-…:~$` 가 보이면 EC2 안입니다. 이하 모든 명령은 EC2에서 실행합니다.
 
 ```bash
-# 메모리가 1GB 라 화면 빌드 중 부족하지 않도록 스왑 2GB 추가
+# 메모리가 1GB 라 이미지 빌드 중 부족하지 않도록 스왑 2GB 추가
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
-# 기본 프로그램: Nginx, git, rsync, MySQL 클라이언트
-sudo apt update && sudo apt install -y nginx git rsync mysql-client
+# 도커 설치 (docker compose 포함)
+curl -fsSL https://get.docker.com | sudo sh
+# sudo 없이 docker 를 쓰도록 권한 추가 → 적용하려면 접속을 끊었다가 다시 접속
+sudo usermod -aG docker ubuntu
+exit
+```
 
-# Node.js 22 (저장소 .nvmrc 와 같은 버전)
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
+다시 접속한 뒤 확인:
 
-# yarn(1.x) 과 PM2(서버 상시 실행)
-sudo npm install -g yarn pm2
-
-node -v && yarn -v && pm2 -v
+```bash
+ssh -i meeting-key.pem ubuntu@<EC2_IP>
+docker -v && docker compose version
 ```
 
 ---
@@ -104,22 +109,21 @@ cat ~/.ssh/id_ed25519.pub
 ```
 출력된 한 줄을 GitHub 저장소 → **Settings → Deploy keys → Add deploy key**에 붙여 넣습니다(쓰기 권한은 체크하지 않음).
 
-### 받기 & 설치
+### 받기
 ```bash
 cd ~
 git clone git@github.com:<계정>/<저장소>.git meeting   # 공개 저장소면 https 주소도 됨
 cd meeting
-yarn install --frozen-lockfile
 ```
 
 ---
 
 ## 5. RDS에 앱 전용 계정 만들기
 
-마스터 계정(`admin`)은 관리용으로만 두고, 앱은 권한이 좁은 전용 계정을 씁니다.
+마스터 계정(`admin`)은 관리용으로만 두고, 앱은 권한이 좁은 전용 계정을 씁니다. MySQL 클라이언트를 설치하지 않고 도커로 잠깐 띄워 접속합니다.
 
 ```bash
-mysql -h <RDS_ENDPOINT> -u admin -p --ssl-mode=REQUIRED
+docker run -it --rm mysql:8.4 mysql -h <RDS_ENDPOINT> -u admin -p --ssl-mode=REQUIRED
 ```
 마스터 암호를 입력하고 접속되면:
 
@@ -136,17 +140,17 @@ EXIT;
 
 ## 6. 운영용 `server/.env` 만들기
 
-필요한 비밀값 두 개를 먼저 만듭니다.
+필요한 비밀값 두 개를 도커로 만듭니다 (EC2에 Node 를 설치하지 않으므로).
 
 ```bash
-cd ~/meeting/server
+cd ~/meeting
 
 # 토큰 서명 키 (출력값을 TOKEN_SECRET 에)
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+docker run --rm node:22-alpine node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 # 운영용 관리자 비밀번호 해시 (출력값을 ADMIN_PASSWORD_HASH 에)
 # 명령 맨 앞에 공백을 넣으면 셸 기록에 비밀번호가 남지 않습니다
- node scripts/hashPassword.js '여기에-운영용-관리자-비밀번호'
+ docker run --rm -v "$PWD/server:/app" -w /app node:22-alpine node scripts/hashPassword.js '여기에-운영용-관리자-비밀번호'
 ```
 
 `.env` 작성:
@@ -156,9 +160,6 @@ nano ~/meeting/server/.env
 ```
 
 ```ini
-PORT=4000
-NODE_ENV=production
-
 # RDS
 DB_HOST=<RDS_ENDPOINT>
 DB_PORT=3306
@@ -170,8 +171,6 @@ DB_SSL=true
 # 사이트 주소 (메일 속 링크, CORS)
 APP_URL=http://<EC2_IP>
 CLIENT_ORIGIN=http://<EC2_IP>
-# Nginx 뒤에서 실행 → 실제 사용자 IP 로 로그인 시도 제한
-TRUST_PROXY=1
 
 # 관리자 계정 / 토큰
 ADMIN_USERNAME=admin
@@ -188,6 +187,8 @@ SMTP_PASS=Gmail-앱-비밀번호
 MAIL_FROM="요정 정모 <보내는주소@gmail.com>"
 ```
 
+`PORT`, `NODE_ENV`, `TRUST_PROXY` 는 `docker-compose.yml` 에서 정하므로 넣지 않아도 됩니다.
+
 저장(`Ctrl+O`, `Enter`) 후 나가기(`Ctrl+X`), 그리고 본인만 읽을 수 있게:
 
 ```bash
@@ -200,26 +201,17 @@ chmod 600 ~/meeting/server/.env
 
 ```bash
 cd ~/meeting
-
-# 테이블 만들기 (여러 번 실행해도 안전)
-yarn db:init
-
-# 화면 빌드 → Nginx 가 읽는 위치로 복사
-yarn build
-sudo mkdir -p /var/www/meeting
-sudo rsync -a --delete client/dist/ /var/www/meeting/
-
-# Nginx 설정
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/meeting
-sudo ln -sf /etc/nginx/sites-available/meeting /etc/nginx/sites-enabled/meeting
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
-
-# 서버 실행 + 재부팅해도 자동 시작
-pm2 start deploy/ecosystem.config.cjs
-pm2 startup          # 출력되는 sudo ... 명령을 복사해 한 번 실행
-pm2 save
+docker compose up -d --build
 ```
+
+처음에는 이미지를 만드느라 5~10분 걸립니다. 끝나면 상태 확인:
+
+```bash
+docker compose ps                 # web, server 둘 다 Up 이면 정상
+docker compose logs server        # "DB 초기화 완료", "DB 연결 성공!", "Server Running" 이 보이면 성공
+```
+
+컨테이너는 `restart: unless-stopped` 로 설정되어 있어, 서버가 죽거나 EC2가 재부팅돼도 자동으로 다시 뜹니다.
 
 ---
 
@@ -243,7 +235,13 @@ pm2 save
 cd ~/meeting && bash deploy/update.sh
 ```
 
-최신 코드 받기 → 설치 → 화면 빌드·교체 → DB 마이그레이션 → 서버 재시작을 한 번에 합니다.
+최신 코드 받기 → 이미지 다시 빌드 → 컨테이너 교체를 한 번에 합니다. DB 마이그레이션은 server 컨테이너가 뜰 때 자동으로 실행됩니다.
+
+`server/.env` 만 바꿨을 때는 다시 빌드할 필요 없이:
+
+```bash
+docker compose up -d --force-recreate server
+```
 
 ---
 
@@ -251,21 +249,16 @@ cd ~/meeting && bash deploy/update.sh
 
 | 증상 | 확인할 것 |
 |---|---|
-| 화면은 뜨는데 데이터가 안 나옴 / 502 | `pm2 logs meeting-server` 로 서버 오류 확인 |
+| 화면은 뜨는데 데이터가 안 나옴 / 502 | `docker compose logs server` 로 서버 오류 확인 |
 | `DB 연결 실패` | `.env` 의 `DB_HOST`·계정·암호, `DB_SSL=true`, RDS 보안 그룹(EC2 연결) |
-| 접속이 아예 안 됨 | EC2 보안 그룹에 HTTP(80) 허용, `sudo systemctl status nginx` |
-| 새로고침하면 404 | `/etc/nginx/sites-enabled/meeting` 이 `deploy/nginx.conf` 인지 |
-| 메일이 안 옴 | `pm2 logs meeting-server` 에서 `재설정 메일 발송 실패` 내용 확인 |
-| 서버 상태 보기 | `pm2 status`, 재시작은 `pm2 restart meeting-server` |
+| 접속이 아예 안 됨 | EC2 보안 그룹에 HTTP(80) 허용, `docker compose ps` 로 web 이 Up 인지 |
+| 빌드 중 멈추거나 `Killed` | 메모리 부족. 3단계 스왑이 켜졌는지 `free -h` 로 확인 |
+| 메일이 안 옴 | `docker compose logs server` 에서 `재설정 메일 발송 실패` 내용 확인 |
+| 상태 보기 / 재시작 | `docker compose ps`, `docker compose restart server` |
+| 실시간 로그 | `docker compose logs -f server` (나가기 `Ctrl+C`) |
 
 ---
 
 ## 참고: 지금은 HTTP 접속입니다
 
-IP로 접속하면 HTTPS 인증서를 받을 수 없어, 로그인 비밀번호가 **암호화되지 않고** 전송됩니다. 지인끼리 잠깐 쓰는 용도라면 괜찮지만, 도메인을 구하면 HTTPS로 바꾸세요.
-
-1. 도메인의 A 레코드를 `<EC2_IP>` 로 연결
-2. EC2 보안 그룹에 HTTPS(443) 허용
-3. `deploy/nginx.conf` 의 `server_name _;` 을 `server_name 도메인;` 으로 바꿔 다시 복사·reload
-4. `sudo apt install -y certbot python3-certbot-nginx && sudo certbot --nginx -d 도메인`
-5. `server/.env` 의 `APP_URL`, `CLIENT_ORIGIN` 을 `https://도메인` 으로 바꾸고 `pm2 restart meeting-server`
+IP로 접속하면 HTTPS 인증서를 받을 수 없어, 로그인 비밀번호가 **암호화되지 않고** 전송됩니다. 지인끼리 잠깐 쓰는 용도라면 괜찮지만, 도메인을 구하면 HTTPS로 바꾸세요. 도커 구성에서는 web 컨테이너에 인증서(443)를 붙이는 작업이 필요하니, 도메인이 생기면 그때 설정을 추가합니다.

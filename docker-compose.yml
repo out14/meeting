@@ -1,0 +1,24 @@
+# 요정 정모: web(Nginx + 화면) → server(API) → RDS
+# 실행: docker compose up -d --build   (server/.env 에 운영 설정이 있어야 한다)
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    env_file: server/.env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # web 컨테이너(Nginx) 뒤에서 실행 → 실제 사용자 IP 로 로그인 시도 제한
+      TRUST_PROXY: 1
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    ports:
+      - '80:80'
+    depends_on:
+      - server
+    restart: unless-stopped

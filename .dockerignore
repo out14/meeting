@@ -1,0 +1,9 @@
+# 이미지에 넣지 않는 것: 설치 폴더, 빌드 결과, git, 비밀값(.env 는 compose 의 env_file 로 넘긴다)
+**/node_modules
+**/dist
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.DS_Store
