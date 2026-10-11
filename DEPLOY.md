@@ -1,6 +1,6 @@
 # 요정 정모 배포 가이드 (AWS EC2 + RDS, IP 접속)
 
-EC2 한 대에 도커로 화면과 API 서버를 올리고, DB는 RDS(MySQL)를 씁니다. 처음 한 번은 1~8단계를 순서대로 하고, 이후 업데이트는 [9. 업데이트 배포](#9-업데이트-배포)만 하면 됩니다.
+EC2 한 대에 도커로 화면과 API 서버를 올리고, DB는 RDS(MySQL)를 씁니다. 처음 한 번은 1~8단계를 순서대로 하고, 이후 업데이트는 [9. 업데이트 배포](#9-업데이트-배포)만 하면 됩니다. [11. 자동 배포](#11-자동-배포-cicd-github-actions)를 설정하면 `main` 에 푸시하는 것만으로 배포됩니다.
 
 ```
 사용자 ──HTTP:80──▶ EC2 (도커)
@@ -256,6 +256,70 @@ docker compose up -d --force-recreate server
 | 메일이 안 옴 | `docker compose logs server` 에서 `재설정 메일 발송 실패` 내용 확인 |
 | 상태 보기 / 재시작 | `docker compose ps`, `docker compose restart server` |
 | 실시간 로그 | `docker compose logs -f server` (나가기 `Ctrl+C`) |
+
+---
+
+## 11. 자동 배포 (CI/CD, GitHub Actions)
+
+`main` 에 푸시하면 GitHub 이 테스트·빌드를 돌리고, 통과하면 EC2 에 접속해 `deploy/update.sh` 를 실행합니다. 설정은 `.github/workflows/ci-cd.yml` 에 있습니다.
+
+```
+main 푸시 → ① 테스트·린트·빌드 (실패하면 중단) → ② EC2 에 SSH 접속 → update.sh 실행 → ③ /api/health 확인
+```
+
+다른 브랜치나 PR 은 ①만 실행합니다. 처음 한 번 아래 설정이 필요합니다.
+
+### 11-1. 배포 전용 키 만들기 (내 맥에서)
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/meeting-deploy -N "" -C "github-actions-deploy"
+```
+`~/.ssh/meeting-deploy`(비밀 키)와 `~/.ssh/meeting-deploy.pub`(공개 키)가 만들어집니다.
+
+### 11-2. EC2 에 "배포만 가능한 키"로 등록 (내 맥에서)
+이 키로 접속하면 어떤 명령을 보내도 `deploy/update.sh` 만 실행되도록 묶습니다. 키가 유출돼도 서버를 마음대로 조작할 수 없습니다.
+
+```bash
+cd 키파일이-있는-폴더   # meeting-key.pem 이 있는 곳
+LINE="command=\"cd /home/ubuntu/meeting && bash deploy/update.sh\",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty $(cat ~/.ssh/meeting-deploy.pub)"
+ssh -i meeting-key.pem ubuntu@<EC2_IP> "echo '$LINE' >> ~/.ssh/authorized_keys"
+```
+
+확인: 이 키로 접속하면 바로 배포가 실행되고 끝나야 합니다 (셸이 열리지 않음).
+```bash
+ssh -i ~/.ssh/meeting-deploy ubuntu@<EC2_IP>
+```
+
+### 11-3. 서버 지문 확인 (내 맥에서)
+가짜 서버에 접속하지 않도록 EC2 의 지문을 GitHub 에 등록해 둡니다.
+```bash
+ssh-keyscan -t ed25519 <EC2_IP>
+```
+`<EC2_IP> ssh-ed25519 AAAA...` 로 시작하는 한 줄을 복사합니다.
+
+### 11-4. GitHub Secrets 등록
+GitHub 저장소 → **Settings → Secrets and variables → Actions → New repository secret** 에서 세 개를 만듭니다.
+
+| 이름 | 값 |
+|---|---|
+| `EC2_HOST` | `<EC2_IP>` |
+| `EC2_SSH_KEY` | `cat ~/.ssh/meeting-deploy` 출력 전체 (`-----BEGIN` 줄부터 `-----END` 줄까지) |
+| `EC2_KNOWN_HOSTS` | 11-3 에서 복사한 한 줄 |
+
+### 11-5. EC2 보안 그룹: SSH 를 GitHub 에서 접속 가능하게
+GitHub 서버는 IP 가 계속 바뀌므로 SSH(22) 를 전체에 엽니다. Ubuntu EC2 는 비밀번호 로그인이 꺼져 있어 **키가 있어야만** 접속됩니다.
+
+EC2 → 보안 그룹 → (인스턴스의 보안 그룹) → 인바운드 규칙 편집 → SSH 규칙의 소스를 **Anywhere-IPv4 (0.0.0.0/0)** 로 → 저장
+
+### 11-6. 확인
+`main` 에 푸시한 뒤 GitHub 저장소 → **Actions** 탭에서 `CI/CD` 실행을 엽니다. `테스트 · 빌드`와 `EC2 배포`가 모두 초록색이면 성공입니다.
+
+| 실패한 단계 | 확인할 것 |
+|---|---|
+| 테스트 · 빌드 | 로그의 실패한 테스트·린트 오류를 고친 뒤 다시 푸시 (배포는 되지 않음) |
+| SSH 접속 (`Permission denied`) | `EC2_SSH_KEY` 가 비밀 키 전체인지, 11-2 를 실행했는지 |
+| SSH 접속 (`Host key verification failed`) | `EC2_KNOWN_HOSTS` 를 11-3 의 한 줄로 다시 등록 |
+| SSH 접속 (시간 초과) | 11-5 보안 그룹 SSH 규칙 |
+| 배포 확인 | EC2 에서 `docker compose logs server` |
 
 ---
 

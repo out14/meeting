@@ -1,0 +1,81 @@
+# CI/CD
+# - 모든 푸시·PR: 서버 테스트 + 화면 린트·타입 검사·빌드 (CI)
+# - main 푸시이고 CI 를 통과하면: EC2 에 SSH 로 접속해 배포 (CD)
+#   EC2 의 authorized_keys 에서 이 키는 `deploy/update.sh` 만 실행하도록 묶여 있다 (DEPLOY.md 11단계)
+name: CI/CD
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 테스트 · 빌드
+    runs-on: ubuntu-latest
+    services:
+      # 서버 테스트용 임시 MySQL (테스트가 meeting_test DB 를 새로 만든다)
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: test-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ptest-root"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: test-root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      - name: 화면 린트
+        run: yarn lint
+      - name: 화면 타입 검사 + 빌드
+        run: yarn build
+      - name: 서버 테스트
+        run: yarn test
+
+  deploy:
+    name: EC2 배포
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # 배포가 겹치지 않게 하나씩 (진행 중인 배포는 끝까지)
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: SSH 키 준비
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          # 서버 지문을 미리 등록해 둔 값과 비교한다 (가짜 서버로의 접속 방지)
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: 배포 (git pull → docker compose up -d --build)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        # 실행할 명령은 서버의 authorized_keys 가 강제하므로 따로 보내지 않는다
+        run: ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes "ubuntu@$EC2_HOST"
+      - name: 배포 확인
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            curl -fsS "http://$EC2_HOST/api/health" && exit 0
+            sleep 10
+          done
+          echo '서버가 응답하지 않습니다. EC2 에서 docker compose logs server 를 확인하세요.' && exit 1
