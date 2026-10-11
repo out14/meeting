@@ -305,6 +305,65 @@ describe('회원', () => {
   })
 })
 
+describe('회원 탈퇴', () => {
+  test('비밀번호를 확인하고, 개설한 모임은 삭제·참여한 모임에서는 빠지며 다른 사람 표가 있는 제시 날짜는 남는다', async () => {
+    const leaver = await signup('떠나는이')
+    const stayer = await signup('남는이')
+    // 떠나는 사람이 개설한 모임
+    const own = (await api('POST', '/meetings', { body: meetingBody({ title: '내 모임' }), user: leaver })).data.code
+    // 떠나는 사람이 참여한 다른 모임 (관리자가 만든 모임)
+    const other = await setupMeeting()
+    for (const user of [leaver, stayer]) await api('POST', `/meetings/${other.code}/members`, { user })
+    const voteDates = (dates, user) => api('PUT', `/meetings/${other.code}/polls/date/votes`, { body: { dates }, user })
+    // 12/25: 떠나는 사람 제시 + 남는 사람도 투표 / 12/26: 떠나는 사람만
+    await voteDates(['2026-12-25', '2026-12-26'], leaver)
+    await voteDates(['2026-12-25'], stayer)
+
+    const withdraw = (password) => api('DELETE', '/users/me', { body: { password }, user: leaver })
+    assert.equal((await api('DELETE', '/users/me', { body: { password: 'secret12' } })).status, 401)
+    assert.equal((await withdraw('wrongpw1')).status, 400)
+    const { status, data } = await withdraw('secret12')
+    assert.equal(status, 200)
+    assert.equal(data.deletedMeetings, 1)
+
+    // 로그인·토큰 모두 무효
+    assert.equal((await api('GET', '/users/me', { user: leaver })).status, 401)
+    // 개설한 모임은 삭제
+    assert.equal((await api('GET', `/meetings/${own}`)).status, 404)
+    // 참여한 모임에서는 빠짐 (모임장 + 남는 사람 + setupMeeting 의 참여자)
+    const meeting = (await api('GET', `/meetings/${other.code}`)).data
+    assert.equal(meeting.members.some((member) => member.nickname === '떠나는이'), false)
+    const { options } = (await api('GET', `/meetings/${other.code}/polls/date`)).data
+    const christmas = options.find((option) => option.date === '2026-12-25')
+    assert.equal(christmas.count, 1)
+    assert.equal(christmas.proposedBy, '남는이')
+    assert.equal(options.some((option) => option.date === '2026-12-26'), false)
+  })
+})
+
+describe('마이페이지 투표 취소 (빈 투표 저장)', () => {
+  test('참여자는 날짜 투표를 취소할 수 있고, 제시한 날짜도 함께 사라진다', async () => {
+    const { code, member } = await setupMeeting()
+    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: ['2026-12-18', '2026-12-30'] }, user: member })
+    assert.equal((await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: [] }, user: member })).status, 200)
+    const poll = (await api('GET', `/meetings/${code}/polls/date`, { user: member })).data
+    assert.deepEqual(poll.myOptionIds, [])
+    assert.equal(poll.options.some((option) => option.date === '2026-12-30'), false)
+    const mine = (await api('GET', '/users/me/meetings', { user: member })).data
+    assert.equal(mine.voted.some((item) => item.code === code), false)
+  })
+
+  test('장소 투표도 취소할 수 있고 의견도 함께 지워진다', async () => {
+    const { code, host, member } = await setupMeeting()
+    await api('POST', `/meetings/${code}/polls/date/confirm`, { body: { startDate: '2026-12-18' }, token: host })
+    await api('POST', `/meetings/${code}/polls/place/places`, { body: { regions: ['부산'], comment: '바다' }, user: member })
+    assert.equal((await api('PUT', `/meetings/${code}/polls/place/votes`, { body: { optionIds: [] }, user: member })).status, 200)
+    const poll = (await api('GET', `/meetings/${code}/polls/place`, { user: member })).data
+    assert.deepEqual(poll.myOptionIds, [])
+    assert.equal(poll.myComment, null)
+  })
+})
+
 describe('비밀번호 변경 / 재설정', () => {
   async function signupAs(username, password = 'secret12') {
     const { data } = await api('POST', '/users', {

@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import db from '../db/db.js'
+import db, { withTransaction } from '../db/db.js'
 import { HttpError, requireText } from '../lib/httpError.js'
 import { sendMail } from '../lib/mailer.js'
 import { hashPassword, verifyPassword } from '../lib/password.js'
@@ -160,6 +160,41 @@ router.post('/password-reset', async (req, res) => {
 
 router.get('/me', requireUser, (req, res) => {
   res.json(toPublicUser(req.user))
+})
+
+// 회원 탈퇴: 비밀번호를 다시 확인한 뒤 회원과 참여 기록을 지운다
+// - 내가 개설한(모임장인) 모임은 함께 삭제 (모임장 없는 모임이 남지 않게)
+// - 다른 모임에서는 참여자·투표가 지워진다 (FK CASCADE)
+// - 내가 제시한 날짜에 다른 사람 표가 있으면, 그 날짜는 표를 준 다른 참여자의 제시로 넘겨 남긴다
+//   (그대로 두면 proposed_by 가 NULL 이 되어 모임장이 정한 후보 날짜처럼 보인다)
+router.delete('/me', requireUser, async (req, res) => {
+  const [[{ password_hash: hash }]] = await db.query('SELECT password_hash FROM users WHERE id = ?', [req.user.id])
+  if (!verifyPassword(req.body?.password, hash)) throw new HttpError(400, '비밀번호가 올바르지 않습니다.')
+
+  const deletedMeetings = await withTransaction(async (conn) => {
+    const [hosted] = await conn.query(
+      "SELECT meeting_id AS id FROM meeting_members WHERE user_id = ? AND role = 'HOST' FOR UPDATE",
+      [req.user.id],
+    )
+    if (hosted.length) await conn.query('DELETE FROM meetings WHERE id IN (?)', [hosted.map((meeting) => meeting.id)])
+
+    const [members] = await conn.query('SELECT id FROM meeting_members WHERE user_id = ?', [req.user.id])
+    const memberIds = members.map((member) => member.id)
+    if (memberIds.length) {
+      await conn.query('DELETE FROM votes WHERE member_id IN (?)', [memberIds])
+      // 표가 남은 내 제시 날짜는 가장 먼저 표를 준 다른 참여자의 제시로
+      await conn.query(
+        `UPDATE poll_options o
+            SET o.proposed_by = (SELECT v.member_id FROM votes v WHERE v.option_id = o.id ORDER BY v.id LIMIT 1)
+          WHERE o.proposed_by IN (?) AND EXISTS (SELECT 1 FROM votes v WHERE v.option_id = o.id)`,
+        [memberIds],
+      )
+      await conn.query('DELETE FROM poll_options WHERE proposed_by IN (?)', [memberIds])
+    }
+    await conn.query('DELETE FROM users WHERE id = ?', [req.user.id])
+    return hosted.length
+  })
+  res.json({ ok: true, deletedMeetings })
 })
 
 // 비밀번호 변경: 현재 비밀번호 확인 후 변경. 다른 기기의 로그인은 끊기고, 지금 기기에는 새 토큰을 준다

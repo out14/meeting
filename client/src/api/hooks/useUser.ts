@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { userController, type UserSession } from '@src/api/controllers/userController'
 import { HttpError } from '@src/api/httpClient'
 import { queryKeys } from '@src/api/queryKeys'
+import { resetUserData } from '@src/api/refresh'
 import { clearUserToken, getUserToken, saveUserToken } from '@src/api/userToken'
 
 // 로그인한 회원. 토큰이 없거나 서버가 거부하면 null
@@ -24,19 +25,13 @@ export function useUser() {
   })
 }
 
-// 로그인 상태가 바뀌면 "내 참여 정보"가 달라지므로 모임/투표를 다시 불러온다
-const refreshIdentity = (queryClient: QueryClient) =>
-  Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.meeting.all }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.poll.all }),
-  ])
-
 function useSaveSession() {
   const queryClient = useQueryClient()
   return async ({ token, expiresAt, user }: UserSession) => {
     saveUserToken(token, expiresAt)
     queryClient.setQueryData(queryKeys.user.me, user)
-    await refreshIdentity(queryClient)
+    // 사용자가 바뀌었으니 이전 사용자의 마이페이지는 지우고, 내 참여 정보가 담긴 데이터는 다시 불러온다
+    await resetUserData(queryClient)
   }
 }
 
@@ -80,11 +75,18 @@ export function useResetPassword() {
   return useMutation({ mutationFn: userController.resetPassword, onSuccess: useSaveSession() })
 }
 
+// 마이페이지는 들어올 때마다 새로 불러온다 (다른 사람의 투표·마감 등 내가 하지 않은 변경도 반영)
 export function useMyMeetings() {
   return useQuery({
     queryKey: queryKeys.user.meetings,
     queryFn: userController.getMyMeetings,
+    staleTime: 0,
   })
+}
+
+// 회원 탈퇴. 성공하면 호출하는 쪽에서 로그인 정보를 지우고 홈을 새로 불러온다 (WithdrawSection)
+export function useWithdraw() {
+  return useMutation({ mutationFn: userController.withdraw })
 }
 
 export function useLogout() {
@@ -92,6 +94,6 @@ export function useLogout() {
   return async () => {
     clearUserToken()
     queryClient.setQueryData(queryKeys.user.me, null)
-    await refreshIdentity(queryClient)
+    await resetUserData(queryClient)
   }
 }

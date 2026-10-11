@@ -4,8 +4,9 @@ import { useLogout, useMyMeetings, useUser } from '@src/api/hooks/useUser'
 import { Button } from '@src/components/Button'
 import { ChangePasswordForm } from '@src/pages/mypage/ChangePasswordForm'
 import { MyMeetingList } from '@src/pages/mypage/MyMeetingList'
+import { WithdrawSection } from '@src/pages/mypage/WithdrawSection'
 
-// 마이페이지: 비밀번호 변경, 내가 개설한 모임, 내가 참여한 투표
+// 마이페이지: 내가 개설한 모임, 내가 참여한 투표(취소 가능), 비밀번호 변경, 회원 탈퇴
 export function MyPage() {
   const { data: user, isPending } = useUser()
   const myMeetings = useMyMeetings()
@@ -53,6 +54,7 @@ export function MyPage() {
       )}
 
       <ChangePasswordForm mustChange={user.mustChangePassword} />
+      <WithdrawSection hostedCount={myMeetings.data?.hosted.length ?? 0} />
     </div>
   )
 }

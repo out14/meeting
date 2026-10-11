@@ -80,4 +80,7 @@ export const userController = {
   checkReset: (resetToken: string) => httpClient.post<ResetLinkInfo>('/users/password-reset/check', { resetToken }),
   resetPassword: (params: ResetPasswordParams) => httpClient.post<UserSession>('/users/password-reset', params),
   getMyMeetings: () => httpClient.get<MyMeetings>('/users/me/meetings', userTokenConfig()),
+  // 회원 탈퇴 (비밀번호 재확인). 개설한 모임은 함께 삭제된다
+  withdraw: (password: string) =>
+    httpClient.delete<{ ok: true; deletedMeetings: number }>('/users/me', { ...userTokenConfig(), data: { password } }),
 }

@@ -1015,3 +1015,25 @@ fieldset {
     margin-bottom: 8px;
   }
 }
+
+// 마이페이지 목록: 카드(링크) 오른쪽 위에 '투표 취소' 버튼을 겹쳐 둔다
+.meeting-item-wrap {
+  position: relative;
+
+  .meeting-item.has-action {
+    padding-right: 96px;
+  }
+
+  .meeting-item-action {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+  }
+}
+
+.withdraw-notice {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+  color: var(--text);
+}

@@ -60,6 +60,11 @@ export function RootLayout() {
                   </Button>
                 </>
               )}
+              {user && (
+                <Button className="btn-sm" variant="secondary" onClick={() => navigate('/mypage')}>
+                  마이페이지
+                </Button>
+              )}
               <Button className="btn-sm" variant="secondary" onClick={handleLogout}>
                 로그아웃
               </Button>
