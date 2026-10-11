@@ -4,6 +4,8 @@ import { useSessionExpiry } from '@src/api/hooks/useSessionExpiry'
 import { useLogout, useUser } from '@src/api/hooks/useUser'
 import { Button } from '@src/components/Button'
 import { withRedirect } from '@src/pages/auth/redirect'
+// 헤더용 로고: 누끼(logo-cutout.png)를 줄인 것 (원본: logo.png)
+import logo from '@src/assets/images/logo-header.png'
 
 export function RootLayout() {
   const navigate = useNavigate()
@@ -28,7 +30,10 @@ export function RootLayout() {
     <div className="app-shell">
       <header className="app-header">
         <h1>
-          <Link to="/">정모 잡기</Link>
+          <Link to="/" className="app-logo">
+            <img src={logo} alt="" className="app-logo-image" />
+            요정 정모
+          </Link>
         </h1>
         {/* 버튼 노출은 편의용. 권한은 서버가 토큰으로 검증한다 */}
         <div className="app-header-actions">

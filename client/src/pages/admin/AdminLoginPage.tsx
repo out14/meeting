@@ -20,9 +20,8 @@ export function AdminLoginPage() {
   }
 
   return (
-    <section className="card mx-auto max-w-md">
-      <h2 className="mt-0">관리자 로그인</h2>
-      <p className="mb-6">모임은 관리자만 만들 수 있어요.</p>
+    <section className="card mx-auto w-full max-w-md">
+      <h2 className="mt-0 mb-6">관리자 로그인</h2>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <TextField
           label="아이디"

@@ -18,7 +18,7 @@ export function FindPasswordPage() {
   }
 
   return (
-    <section className="card mx-auto max-w-md">
+    <section className="card mx-auto w-full max-w-md">
       <h2 className="mt-0">비밀번호 찾기</h2>
       <p className="mb-6">가입할 때 입력한 이름과 이메일을 입력해 주세요.</p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>

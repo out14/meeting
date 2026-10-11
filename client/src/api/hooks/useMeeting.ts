@@ -64,6 +64,41 @@ export function useCloseVote(code: string) {
   })
 }
 
+// 장소 투표 지금 마감: 모임 단계와 장소 결과가 바뀐다
+export function useClosePlaceVote(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => meetingController.closePlaceVote(code),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.meeting.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.poll.all }),
+      ]),
+  })
+}
+
+export function useUpdatePlaceDeadline(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (placeDeadline: string) => meetingController.updatePlaceDeadline(code, placeDeadline),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.meeting.all }),
+  })
+}
+
+// 모임장 날짜 수정: 모임 정보·캘린더 목록과 날짜 투표를 함께 갱신한다
+export function useUpdateMeetingDates(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { startDate: string; endDate: string; voteDeadline?: string }) =>
+      meetingController.updateDates(code, body),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.meeting.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.poll.all }),
+      ]),
+  })
+}
+
 // 모임장 또는 관리자. 모임 화면과 모임 관리 테이블에서 함께 쓰므로 code 는 호출할 때 받는다
 export function useDeleteMeeting() {
   const queryClient = useQueryClient()

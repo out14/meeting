@@ -16,7 +16,11 @@ export interface PollOption {
   voters: { id: number; nickname: string; comment?: string | null }[]
 }
 
-export type ConfirmBody = { startDate: string; endDate: string } | { optionId: number }
+// 날짜: 연속 범위 (+ 장소 투표 마감) / 장소: 선택지 또는 시·도 이름 (장소 미정일 때 아무 시·도나)
+export type ConfirmBody =
+  | { startDate: string; endDate: string; placeDeadline?: string }
+  | { optionId: number }
+  | { region: string }
 
 export interface Poll {
   id: number
@@ -35,12 +39,12 @@ const pollPath = (code: string, type: PollType) => `/meetings/${code}/polls/${ty
 
 export const pollController = {
   getDetail: (code: string, type: PollType) => httpClient.get<Poll>(pollPath(code, type), memberTokenConfig(code)),
-  // 날짜 제안: 선택지로 추가하고 내 투표로 찍는다 (이미 있는 날짜는 기존 선택지에 투표)
-  proposeDates: (code: string, range: { startDate: string; endDate?: string }) =>
-    httpClient.post<{ optionIds: number[] }>(`${pollPath(code, 'date')}/options`, range, memberTokenConfig(code)),
   // 장소 투표: 시·도 여러 곳 + 의견 하나 (내 장소 투표를 통째로 교체)
   votePlace: (code: string, body: { regions: string[]; comment: string }) =>
     httpClient.post<{ optionIds: number[] }>(`${pollPath(code, 'place')}/places`, body, memberTokenConfig(code)),
+  // 날짜 투표를 날짜로 저장 (선택지에 없는 날짜는 내 제안 날짜로 추가된다)
+  voteDates: (code: string, dates: string[]) =>
+    httpClient.put(`${pollPath(code, 'date')}/votes`, { dates }, memberTokenConfig(code)),
   vote: (code: string, type: PollType, optionIds: number[]) =>
     httpClient.put(`${pollPath(code, type)}/votes`, { optionIds }, memberTokenConfig(code)),
   // 날짜: { startDate, endDate } 연속 범위 / 장소: { optionId }

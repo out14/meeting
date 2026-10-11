@@ -18,14 +18,6 @@ function useInvalidatePoll(code: string, type: PollType) {
   return () => queryClient.invalidateQueries({ queryKey: queryKeys.poll.detail(code, type) })
 }
 
-export function useProposeDates(code: string) {
-  const invalidate = useInvalidatePoll(code, 'date')
-  return useMutation({
-    mutationFn: (range: { startDate: string; endDate?: string }) => pollController.proposeDates(code, range),
-    onSuccess: invalidate,
-  })
-}
-
 export function useVotePlace(code: string) {
   const invalidate = useInvalidatePoll(code, 'place')
   return useMutation({
@@ -39,6 +31,19 @@ export function useVote(code: string, type: PollType) {
   return useMutation({
     mutationFn: (optionIds: number[]) => pollController.vote(code, type, optionIds),
     onSuccess: invalidate,
+  })
+}
+
+// 날짜 투표 저장: 제안 날짜가 바뀌면 메인 캘린더에도 보여야 하므로 모임 목록도 다시 불러온다
+export function useVoteDates(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (dates: string[]) => pollController.voteDates(code, dates),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.poll.detail(code, 'date') }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.meeting.list() }),
+      ]),
   })
 }
 

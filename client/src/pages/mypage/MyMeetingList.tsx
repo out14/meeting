@@ -1,7 +1,8 @@
 import classNames from 'classnames'
 import { Link } from 'react-router-dom'
 import type { MyMeeting, MyVote } from '@src/api/controllers/userController'
-import { formatDay, STAGE_LABEL } from '@src/utils/stage'
+import { StatusTag } from '@src/components/StatusTag'
+import { formatDay, meetingStatus } from '@src/utils/stage'
 
 function VoteChips({ label, votes }: { label: string; votes: MyVote[] }) {
   if (!votes.length) return null
@@ -41,9 +42,7 @@ export function MyMeetingList({ title, meetings, emptyText, showVotes = false }:
               <Link to={`/m/${meeting.code}`} className="meeting-item">
                 <span className="flex items-center gap-2">
                   <span className="font-medium text-[var(--text-h)]">{meeting.title}</span>
-                  <span className={classNames('stage-tag', { done: meeting.stage === 'DONE' })}>
-                    {STAGE_LABEL[meeting.stage]}
-                  </span>
+                  <StatusTag status={meetingStatus(meeting)} />
                 </span>
                 <span className="text-sm">
                   후보 기간 {formatDay(meeting.candidateStart)} ~ {formatDay(meeting.candidateEnd)} · 참여자{' '}

@@ -16,7 +16,7 @@ export function MyPage() {
   if (!user) return <Navigate to="/login?redirect=%2Fmypage" replace />
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <section className="card flex items-start justify-between gap-4">
         <div>
           <h2 className="m-0">{user.nickname} 님</h2>

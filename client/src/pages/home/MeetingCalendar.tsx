@@ -3,6 +3,7 @@ import classNames from 'classnames'
 import { Link } from 'react-router-dom'
 import type { MeetingSummary } from '@src/api/controllers/meetingController'
 import { Button } from '@src/components/Button'
+import { STATUS_LABEL } from '@src/utils/stage'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -29,8 +30,8 @@ function buildMonthDays(year: number, month: number) {
   return Array.from({ length: weeks * 7 }, (_, index) => addDays(start, index))
 }
 
-// 일정 상태: 날짜 투표 중(후보 기간 / 참여자 제안 날짜) → 일정 확정
-type EventStatus = 'candidate' | 'proposed' | 'confirmed'
+// 표시 상태 (색 클래스): 일정 미정(후보 날짜 candidate / 제안 날짜 proposed) → 장소 미정(date) → 확정된 일정(confirmed)
+type EventStatus = 'candidate' | 'proposed' | 'date' | 'confirmed'
 
 interface CalendarEvent {
   meeting: MeetingSummary
@@ -41,29 +42,36 @@ interface CalendarEvent {
 
 const daysBetween = (start: string, end: string) => (parseKey(end).getTime() - parseKey(start).getTime()) / 86_400_000 + 1
 
-// 표시할 날짜 범위
-// - 일정 확정: 확정된 시작일 ~ 종료일
-// - 날짜 투표 중: 모임 생성 때 고른 후보 기간 전체
-function eventRange(meeting: MeetingSummary): { start: string; days: number; status: EventStatus } {
+// 표시할 날짜
+// - 장소 미정 / 확정된 일정: 확정된 시작일 ~ 종료일 (장소까지 정해졌으면 확정된 일정)
+// - 날짜 투표 중: 모임장이 정한 후보 날짜 (떨어져 있을 수 있다)
+function eventDates(meeting: MeetingSummary): { dates: string[]; status: EventStatus } {
   if (meeting.startDate && meeting.endDate) {
-    return { start: meeting.startDate, days: daysBetween(meeting.startDate, meeting.endDate), status: 'confirmed' }
+    const { startDate } = meeting
+    const days = daysBetween(startDate, meeting.endDate)
+    return {
+      dates: Array.from({ length: days }, (_, offset) => addDays(startDate, offset)),
+      status: meeting.place ? 'confirmed' : 'date',
+    }
   }
-  return { start: meeting.candidateStart, days: daysBetween(meeting.candidateStart, meeting.candidateEnd), status: 'candidate' }
+  return { dates: meeting.candidateDates, status: 'candidate' }
 }
 
-const STATUS_ORDER: Record<EventStatus, number> = { confirmed: 0, candidate: 1, proposed: 2 }
+const STATUS_ORDER: Record<EventStatus, number> = { confirmed: 0, date: 1, candidate: 2, proposed: 3 }
+// 이름은 왼쪽 상태별 목록과 같게 (일정 미정 / 장소 미정 / 확정된 일정)
 const STATUS_TITLE: Record<EventStatus, string> = {
-  confirmed: '일정 확정',
-  candidate: '후보 기간 · 날짜 투표 중',
-  proposed: '참여자가 제안한 날짜 · 날짜 투표 중',
+  confirmed: STATUS_LABEL.confirmed,
+  date: STATUS_LABEL.unplaced,
+  candidate: `${STATUS_LABEL.unscheduled} · 후보 날짜`,
+  proposed: `${STATUS_LABEL.unscheduled} · 참여자 제안 날짜`,
 }
 
 function groupByDate(meetings: MeetingSummary[]) {
   const map = new Map<string, CalendarEvent[]>()
   const add = (key: string, event: CalendarEvent) => map.set(key, [...(map.get(key) ?? []), event])
   for (const meeting of meetings) {
-    const { start, days, status } = eventRange(meeting)
-    for (let offset = 0; offset < days; offset += 1) add(addDays(start, offset), { meeting, status, label: meeting.title })
+    const { dates, status } = eventDates(meeting)
+    for (const date of dates) add(date, { meeting, status, label: meeting.title })
     // 날짜 투표 중이면 참여자가 제안한 날짜도 표시한다
     if (status === 'candidate') {
       for (const { date, proposedBy } of meeting.proposals) {
@@ -71,7 +79,7 @@ function groupByDate(meetings: MeetingSummary[]) {
       }
     }
   }
-  // 한 칸 안에서는 확정된 일정을 위에
+  // 한 칸 안에서는 확정된 일정 → 장소 미정 → 후보 → 제안 순으로
   for (const events of map.values()) events.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
   return map
 }
@@ -138,7 +146,7 @@ export function MeetingCalendar({ meetings }: { meetings: MeetingSummary[] }) {
                   key={`${meeting.code}-${label}`}
                   to={`/m/${meeting.code}`}
                   className={classNames('calendar-event', status)}
-                  title={`${label} (${STATUS_TITLE[status]})`}
+                  title={`${label} (${STATUS_TITLE[status]}${meeting.place ? ` · 📍 ${meeting.place}` : ''})`}
                 >
                   {label}
                 </Link>
@@ -147,15 +155,19 @@ export function MeetingCalendar({ meetings }: { meetings: MeetingSummary[] }) {
           )
         })}
       </div>
+      {/* 범례: 왼쪽 상태별 목록과 같은 순서·이름·색 */}
       <p className="calendar-legends mt-3 text-sm">
         <span>
-          <span className="calendar-legend confirmed" /> 일정 확정
+          <span className="calendar-legend candidate" /> {STATUS_LABEL.unscheduled} (후보 날짜)
         </span>
         <span>
-          <span className="calendar-legend candidate" /> 후보 기간 (날짜 투표 중)
+          <span className="calendar-legend proposed" /> 제안 날짜
         </span>
         <span>
-          <span className="calendar-legend proposed" /> 참여자 제안 날짜
+          <span className="calendar-legend date" /> {STATUS_LABEL.unplaced}
+        </span>
+        <span>
+          <span className="calendar-legend confirmed" /> {STATUS_LABEL.confirmed}
         </span>
       </p>
     </section>

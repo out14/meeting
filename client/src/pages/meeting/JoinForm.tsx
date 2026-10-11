@@ -13,7 +13,7 @@ export function JoinForm({ meeting }: { meeting: Meeting }) {
   const here = `/m/${meeting.code}`
 
   return (
-    <section className="card mx-auto max-w-md">
+    <section className="card mx-auto w-full max-w-md">
       <p className="mb-1">초대받은 모임</p>
       <h2 className="mt-0">{meeting.title}</h2>
       <p className="mb-6">

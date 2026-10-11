@@ -8,10 +8,11 @@ interface VoteDeadlineProps {
   closed: boolean
   // 오른쪽에 붙일 동작 (모임장의 '지금 마감' 버튼 등)
   action?: ReactNode
+  label?: string
 }
 
-// 날짜 투표 마감 일시 + 남은 시간 (30초마다 갱신)
-export function VoteDeadline({ deadline, closed, action }: VoteDeadlineProps) {
+// 투표 마감 일시 + 남은 시간 (30초마다 갱신). 날짜 투표 / 장소 투표 공용
+export function VoteDeadline({ deadline, closed, action, label = '날짜 투표 마감' }: VoteDeadlineProps) {
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -25,7 +26,9 @@ export function VoteDeadline({ deadline, closed, action }: VoteDeadlineProps) {
 
   return (
     <p className={classNames('deadline', { over: isOver, soon: !isOver && remaining < 86_400_000 })}>
-      <span>⏰ 날짜 투표 마감 {formatDeadline(deadline)}</span>
+      <span>
+        ⏰ {label} {formatDeadline(deadline)}
+      </span>
       <span className="deadline-side">
         <span className="deadline-remaining">{isOver ? '마감됨' : formatRemaining(remaining)}</span>
         {!isOver && action}

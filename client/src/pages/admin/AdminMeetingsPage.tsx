@@ -2,7 +2,6 @@ import classNames from "classnames";
 import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import type { AdminMeeting } from "@src/api/controllers/adminController";
-import type { MeetingStage } from "@src/api/controllers/meetingController";
 import {
   useAdmin,
   useAdminMeetings,
@@ -12,9 +11,16 @@ import { useDeleteMeeting } from "@src/api/hooks/useMeeting";
 import { getErrorMessage } from "@src/api/httpClient";
 import { Button } from "@src/components/Button";
 import { formatDeadline } from "@src/utils/deadline";
-import { formatDay, STAGE_LABEL } from "@src/utils/stage";
+import { StatusTag } from "@src/components/StatusTag";
+import {
+  formatDay,
+  MEETING_STATUSES,
+  meetingStatus,
+  placeText,
+  STATUS_LABEL,
+  type MeetingStatus,
+} from "@src/utils/stage";
 
-const STAGES: MeetingStage[] = ["VOTE", "PLACE", "DONE"];
 
 const formatRange = (start: string, end: string) =>
   start === end ? formatDay(start) : `${formatDay(start)} ~ ${formatDay(end)}`;
@@ -33,7 +39,7 @@ export function AdminMeetingsPage() {
   const deleteMeetings = useDeleteMeetings();
   // 체크한 모임 code
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [stage, setStage] = useState<MeetingStage | null>(null);
+  const [status, setStatus] = useState<MeetingStatus | null>(null);
   const [keyword, setKeyword] = useState("");
 
   if (isAdminPending) return <p className="text-center">불러오는 중…</p>;
@@ -43,11 +49,11 @@ export function AdminMeetingsPage() {
   const search = keyword.trim().toLowerCase();
   const rows = all.filter(
     (meeting) =>
-      (!stage || meeting.stage === stage) &&
+      (!status || meetingStatus(meeting) === status) &&
       (!search || matches(meeting, search)),
   );
-  const countOf = (value: MeetingStage) =>
-    all.filter((meeting) => meeting.stage === value).length;
+  const countOf = (value: MeetingStatus) =>
+    all.filter((meeting) => meetingStatus(meeting) === value).length;
   // 필터·검색으로 가려진 모임은 선택에 남아 있어도 지우지 않는다 (지금 보이는 것만)
   const selectedRows = rows.filter((meeting) => selected.has(meeting.code));
   const isAllSelected = rows.length > 0 && selectedRows.length === rows.length;
@@ -101,7 +107,7 @@ export function AdminMeetingsPage() {
   };
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
       <section className="card">
         <h2 className="mt-0">모임 관리</h2>
         <p>
@@ -115,23 +121,23 @@ export function AdminMeetingsPage() {
           <div className="region-chips" role="group" aria-label="진행 상태">
             <button
               type="button"
-              className={classNames("region-chip", { selected: !stage })}
-              aria-pressed={!stage}
-              onClick={() => setStage(null)}
+              className={classNames("region-chip", { selected: !status })}
+              aria-pressed={!status}
+              onClick={() => setStatus(null)}
             >
               전체 <span className="region-chip-count">{all.length}</span>
             </button>
-            {STAGES.map((value) => (
+            {MEETING_STATUSES.map((value) => (
               <button
                 key={value}
                 type="button"
                 className={classNames("region-chip", {
-                  selected: stage === value,
+                  selected: status === value,
                 })}
-                aria-pressed={stage === value}
-                onClick={() => setStage(value)}
+                aria-pressed={status === value}
+                onClick={() => setStatus(value)}
               >
-                {STAGE_LABEL[value]}{" "}
+                {STATUS_LABEL[value]}{" "}
                 <span className="region-chip-count">{countOf(value)}</span>
               </button>
             ))}
@@ -232,13 +238,7 @@ export function AdminMeetingsPage() {
                       </Link>
                     </td>
                     <td>
-                      <span
-                        className={classNames("stage-tag", {
-                          done: meeting.stage === "DONE",
-                        })}
-                      >
-                        {STAGE_LABEL[meeting.stage]}
-                      </span>
+                      <StatusTag status={meetingStatus(meeting)} />
                     </td>
                     <td>
                       {meeting.hostNickname ?? "-"}
@@ -265,7 +265,7 @@ export function AdminMeetingsPage() {
                           )
                         : "-"}
                     </td>
-                    <td>{meeting.place ?? "-"}</td>
+                    <td>{placeText(meeting) ?? "-"}</td>
                     <td className="text-right">{meeting.memberCount}명</td>
                     <td className="text-right">{meeting.dateVoterCount}명</td>
                     <td className="text-right">

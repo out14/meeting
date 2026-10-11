@@ -31,3 +31,13 @@ export function readDateRange(startValue, endValue, field = '후보 기간') {
 }
 
 export const readCandidateRange = (startValue, endValue) => readDateRange(startValue, endValue, '후보 기간')
+
+// 날짜 목록 검증 (중복 제거) → [{ value, label }]
+export function readDates(values) {
+  if (!Array.isArray(values)) throw new HttpError(400, '날짜를 확인해 주세요.')
+  return [...new Set(values)].map((value) => {
+    const date = parseDate(value)
+    if (!date) throw new HttpError(400, '날짜를 확인해 주세요.')
+    return { value, label: dateLabel(date) }
+  })
+}

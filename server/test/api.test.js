@@ -196,7 +196,8 @@ describe('모임 관리 (관리자)', () => {
     assert.equal(row.hostNickname, '철수')
     assert.equal(row.hostUsername, null)
     assert.equal(row.memberCount, 2)
-    assert.equal(row.dateVoterCount, 1)
+    // 모임장(생성 시 자동 투표) + 참여자
+    assert.equal(row.dateVoterCount, 2)
     assert.equal(row.placeVoterCount, 0)
     assert.equal(row.scheduleStart, null)
     assert.equal(row.place, null)
@@ -386,7 +387,13 @@ describe('마이페이지', () => {
     const mine = (await api('GET', '/users/me/meetings', { user: owner })).data
     assert.deepEqual(mine.hosted.map((meeting) => meeting.title), ['내 모임'])
     assert.equal(mine.hosted[0].memberCount, 2)
-    assert.deepEqual(mine.voted, [])
+    // 모임장은 만들 때 후보 날짜 전체에 자동 투표된다
+    assert.deepEqual(mine.voted.map((meeting) => meeting.code), [code])
+    assert.deepEqual(mine.voted[0].votes.date, [
+      { label: '12/18 (금)', confirmed: false },
+      { label: '12/19 (토)', confirmed: true },
+      { label: '12/20 (일)', confirmed: false },
+    ])
 
     const theirs = (await api('GET', '/users/me/meetings', { user: voter })).data
     assert.deepEqual(theirs.hosted, [])
@@ -400,6 +407,29 @@ describe('마이페이지', () => {
 })
 
 describe('모임 생성 / 참여', () => {
+  test('모임장은 만들 때 후보 날짜 전체에 자동으로 투표된다 (회원 / 관리자가 만든 모임장 모두)', async () => {
+    const owner = await signup('자동투표')
+    const byUser = (await api('POST', '/meetings', { body: meetingBody(), user: owner })).data
+    let poll = (await api('GET', `/meetings/${byUser.code}/polls/date`, { user: owner })).data
+    assert.deepEqual(poll.options.map((option) => option.count), [1, 1, 1])
+    assert.equal(poll.myOptionIds.length, 3)
+
+    const byAdmin = (await api('POST', '/meetings', { body: meetingBody(), admin: adminToken })).data
+    poll = (await api('GET', `/meetings/${byAdmin.code}/polls/date`, { token: byAdmin.token })).data
+    assert.deepEqual(poll.options.map((option) => option.count), [1, 1, 1])
+    assert.equal(poll.myOptionIds.length, 3)
+
+    // 다른 사람이 보면 표 수만 보이고 내 선택은 없다
+    poll = (await api('GET', `/meetings/${byUser.code}/polls/date`)).data
+    assert.deepEqual(poll.myOptionIds, [])
+
+    // 모임장이 투표를 바꾸면 후보 날짜가 그만큼으로 수정된다
+    const [first] = poll.options
+    await api('PUT', `/meetings/${byUser.code}/polls/date/votes`, { body: { optionIds: [first.id] }, user: owner })
+    poll = (await api('GET', `/meetings/${byUser.code}/polls/date`, { user: owner })).data
+    assert.deepEqual(poll.options.map((option) => [option.date, option.count]), [['2026-12-18', 1]])
+  })
+
   test('모임을 만들면 초대 코드와 모임장 토큰을 받고, 후보 기간의 날짜가 모두 후보가 된다', async () => {
     const { code, host } = await setupMeeting()
     const { status, data } = await api('GET', `/meetings/${code}`, { token: host })
@@ -503,15 +533,18 @@ describe('날짜 투표', () => {
     const { code, host, member } = await setupMeeting()
     const [, sat, sun] = (await api('GET', `/meetings/${code}/polls/date`)).data.options
 
-    assert.equal((await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { optionIds: [sat.id, sun.id] }, token: host })).status, 200)
-    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { optionIds: [sat.id] }, user: member })
-    // 투표 변경: 토요일 -> 일요일
+    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { optionIds: [sat.id, sun.id] }, user: member })
+    // 투표 변경: 토·일 -> 일
     await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { optionIds: [sun.id] }, user: member })
 
     const { data } = await api('GET', `/meetings/${code}/polls/date`, { user: member })
     assert.equal(data.voterCount, 2)
-    assert.deepEqual(data.options.map((option) => option.count), [0, 1, 2])
+    // 모임장(후보 날짜 전체) + 참여자(일)
+    assert.deepEqual(data.options.map((option) => option.count), [1, 1, 2])
     assert.deepEqual(data.myOptionIds, [sun.id])
+    // 참여자는 투표를 모두 취소할 수 있지만, 모임장은 후보 날짜가 하나는 있어야 한다
+    assert.equal((await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { optionIds: [] }, user: member })).status, 200)
+    assert.equal((await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { optionIds: [] }, token: host })).status, 400)
   })
 
   test('로그인하지 않았거나 참여하지 않은 회원은 투표할 수 없다', async () => {
@@ -536,6 +569,151 @@ describe('날짜 투표', () => {
   test('기간 투표는 없다', async () => {
     const { code } = await setupMeeting()
     assert.equal((await api('GET', `/meetings/${code}/polls/duration`)).status, 404)
+  })
+})
+
+describe('날짜로 투표 (달력에서 아무 날짜나)', () => {
+  test('후보 기간 밖 날짜를 고르면 내 제안 날짜로 추가되고, 표가 없어지면 사라진다', async () => {
+    const { code, member } = await setupMeeting()
+    const voteDates = (dates, opts = { user: member }) =>
+      api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates }, ...opts })
+    const poll = async () => (await api('GET', `/meetings/${code}/polls/date`, { user: member })).data
+
+    assert.equal((await voteDates(['2026-12-19', '2026-12-25', '2026-12-26'])).status, 200)
+    let data = await poll()
+    const byDate = Object.fromEntries(data.options.map((option) => [option.date, option]))
+    // 후보 날짜(모임장 자동 투표 1표 + 나), 제안 날짜(나)
+    assert.equal(byDate['2026-12-19'].count, 2)
+    assert.equal(byDate['2026-12-25'].count, 1)
+    assert.equal(byDate['2026-12-25'].proposedBy, '영희')
+    assert.equal(data.myOptionIds.length, 3)
+    // 캘린더 목록에도 제안 날짜로 보인다
+    let listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.proposals.map((proposal) => proposal.date), ['2026-12-25', '2026-12-26'])
+
+    // 다시 고르면 통째로 바뀌고, 표가 없어진 내 제안 날짜(12/25)는 지워진다
+    assert.equal((await voteDates(['2026-12-26'])).status, 200)
+    data = await poll()
+    assert.equal(data.options.some((option) => option.date === '2026-12-25'), false)
+    // 후보 기간 날짜는 표가 없어도 남는다
+    assert.equal(data.options.some((option) => option.date === '2026-12-19'), true)
+    listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.proposals.map((proposal) => proposal.date), ['2026-12-26'])
+
+    assert.equal((await voteDates(['2026-02-30'])).status, 400)
+    assert.equal((await voteDates('2026-12-26')).status, 400)
+    assert.equal((await voteDates(['2026-12-26'], {})).status, 401)
+  })
+
+  test('다른 사람이 투표한 내 제안 날짜는 남는다', async () => {
+    const { code, member } = await setupMeeting()
+    const other = await signup('철이')
+    await api('POST', `/meetings/${code}/members`, { user: other })
+    const voteDates = (dates, user) => api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates }, user })
+    await voteDates(['2026-12-25'], member)
+    await voteDates(['2026-12-25'], other)
+    await voteDates([], member)
+    const { options } = (await api('GET', `/meetings/${code}/polls/date`)).data
+    const christmas = options.find((option) => option.date === '2026-12-25')
+    assert.equal(christmas.count, 1)
+  })
+})
+
+describe('날짜 수정 (모임장) vs 제시 (참여자)', () => {
+  test('모임장이 달력에서 날짜를 바꾸면 후보 날짜가 수정되고, 캘린더에도 후보로 보인다', async () => {
+    const { code, host, member } = await setupMeeting()
+    // 참여자: 후보 12/18 + 후보 밖 12/25(제시)
+    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: ['2026-12-18', '2026-12-25'] }, user: member })
+    let listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.candidateDates, ['2026-12-18', '2026-12-19', '2026-12-20'])
+    assert.deepEqual(listed.proposals, [{ date: '2026-12-25', proposedBy: '영희' }])
+
+    // 모임장: 12/18~20 → 12/26, 12/27 로 수정 (후보 밖 날짜여도 '제시'가 아니다)
+    const hostVote = (dates) => api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates }, token: host })
+    assert.equal((await hostVote(['2026-12-26', '2026-12-27'])).status, 200)
+    listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.candidateDates, ['2026-12-26', '2026-12-27'])
+    assert.deepEqual([listed.candidateStart, listed.candidateEnd], ['2026-12-26', '2026-12-27'])
+    // 참여자의 제시는 그대로, 빠진 후보 날짜(12/18)의 참여자 표는 사라진다
+    assert.deepEqual(listed.proposals, [{ date: '2026-12-25', proposedBy: '영희' }])
+    let poll = (await api('GET', `/meetings/${code}/polls/date`, { user: member })).data
+    assert.deepEqual(
+      poll.options.map((option) => [option.date, option.count, option.proposedBy]),
+      [
+        ['2026-12-25', 1, '영희'],
+        ['2026-12-26', 1, null],
+        ['2026-12-27', 1, null],
+      ],
+    )
+
+    // 모임장이 참여자의 제시 날짜를 고르면 후보로 바뀐다 (참여자 표 유지)
+    assert.equal((await hostVote(['2026-12-25', '2026-12-26'])).status, 200)
+    listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.candidateDates, ['2026-12-25', '2026-12-26'])
+    assert.deepEqual(listed.proposals, [])
+    poll = (await api('GET', `/meetings/${code}/polls/date`)).data
+    assert.equal(poll.options.find((option) => option.date === '2026-12-25').count, 2)
+
+    // 떨어진 날짜도 후보가 될 수 있지만, 첫날~마지막 날은 31일 이내
+    assert.equal((await hostVote(['2026-12-01', '2026-12-31'])).status, 200)
+    assert.equal((await hostVote(['2026-12-01', '2027-01-01'])).status, 400)
+    assert.equal((await hostVote([])).status, 400)
+  })
+
+  test('모임장이 날짜 제안 API 를 써도 후보 추가로 처리된다', async () => {
+    const { code, host } = await setupMeeting()
+    const { status } = await api('POST', `/meetings/${code}/polls/date/options`, { body: { startDate: '2026-12-24' }, token: host })
+    assert.equal(status, 201)
+    const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.candidateDates, ['2026-12-18', '2026-12-19', '2026-12-20', '2026-12-24'])
+    assert.deepEqual(listed.proposals, [])
+  })
+})
+
+describe('날짜 수정 (모임장)', () => {
+  test('투표 중에는 후보 기간을 옮기고, 새 날짜에는 모임장이 자동 투표된다', async () => {
+    const { code, host, member } = await setupMeeting()
+    const edit = (body, opts) => api('PATCH', `/meetings/${code}/dates`, { body, ...opts })
+    // 참여자가 12/19(후보)와 12/30(제안)에 투표
+    await api('PUT', `/meetings/${code}/polls/date/votes`, { body: { dates: ['2026-12-19', '2026-12-30'] }, user: member })
+
+    assert.equal((await edit({ startDate: '2026-12-19', endDate: '2026-12-22' }, { user: member })).status, 403)
+    assert.equal((await edit({ startDate: '2026-12-19', endDate: '2026-12-22' })).status, 401)
+    assert.equal((await edit({ startDate: '2026-12-22', endDate: '2026-12-19' }, { token: host })).status, 400)
+    assert.equal((await edit({ startDate: '2026-12-01', endDate: '2027-01-15' }, { token: host })).status, 400)
+
+    const deadline = inDays(3)
+    assert.equal((await edit({ startDate: '2026-12-19', endDate: '2026-12-22', voteDeadline: deadline }, { token: host })).status, 200)
+    const meeting = (await api('GET', `/meetings/${code}`)).data
+    assert.deepEqual([meeting.candidateStart, meeting.candidateEnd], ['2026-12-19', '2026-12-22'])
+    assert.equal(Date.parse(meeting.voteDeadline), Math.floor(Date.parse(deadline) / 1000) * 1000)
+
+    const { options } = (await api('GET', `/meetings/${code}/polls/date`)).data
+    const counts = Object.fromEntries(options.map((option) => [option.date, option.count]))
+    // 12/18 은 빠지고, 12/19~20 은 기존 표 유지, 12/21~22 는 새로 들어와 모임장 1표, 제안 날짜 12/30 은 유지
+    assert.deepEqual(counts, { '2026-12-19': 2, '2026-12-20': 1, '2026-12-21': 1, '2026-12-22': 1, '2026-12-30': 1 })
+
+    // 제안 날짜(12/30)를 포함하도록 다시 늘리면 후보 날짜가 되어 '제시' 표시에서 빠진다 (표는 유지)
+    assert.equal((await edit({ startDate: '2026-12-19', endDate: '2026-12-31' }, { token: host })).status, 200)
+    const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual(listed.proposals, [])
+    const after = (await api('GET', `/meetings/${code}/polls/date`)).data.options.find((option) => option.date === '2026-12-30')
+    assert.equal(after.proposedBy, null)
+    assert.equal(after.count, 2)
+  })
+
+  test('확정 후에는 확정 일정을 아무 날짜로나 옮길 수 있다 (최대 14일)', async () => {
+    const { code, host } = await setupMeeting()
+    await api('POST', `/meetings/${code}/polls/date/confirm`, { body: { startDate: '2026-12-18', endDate: '2026-12-19' }, token: host })
+    const edit = (body) => api('PATCH', `/meetings/${code}/dates`, { body, token: host })
+
+    assert.equal((await edit({ startDate: '2026-12-01', endDate: '2026-12-15' })).status, 400)
+    assert.equal((await edit({ startDate: '2027-01-14', endDate: '2027-01-15' })).status, 200)
+    const meeting = (await api('GET', `/meetings/${code}`)).data
+    assert.equal(meeting.stage, 'PLACE')
+    assert.deepEqual(meeting.confirmed.schedule, { startDate: '2027-01-14', endDate: '2027-01-15' })
+    const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual([listed.startDate, listed.endDate], ['2027-01-14', '2027-01-15'])
   })
 })
 
@@ -687,6 +865,124 @@ describe('캘린더 제안 날짜', () => {
   })
 })
 
+describe('장소 투표 마감', () => {
+  // 날짜를 확정해 장소 투표를 시작한 모임
+  async function placeMeeting(extra = {}) {
+    const meeting = await setupMeeting()
+    const confirmed = await api('POST', `/meetings/${meeting.code}/polls/date/confirm`, {
+      body: { startDate: '2026-12-18', endDate: '2026-12-19', ...extra },
+      token: meeting.host,
+    })
+    assert.equal(confirmed.status, 200)
+    return meeting
+  }
+  const place = (code, regions, opts) => api('POST', `/meetings/${code}/polls/place/places`, { body: { regions }, ...opts })
+  const expirePlace = (code) =>
+    db.query('UPDATE meetings SET place_deadline = UTC_TIMESTAMP() - INTERVAL 1 MINUTE WHERE code = ?', [code])
+  const detail = async (code) => (await api('GET', `/meetings/${code}`)).data
+
+  test('날짜가 확정되면 장소 마감은 기본으로 시작일 D-2 23:59 (한국 시간)', async () => {
+    const { code } = await placeMeeting()
+    const meeting = await detail(code)
+    // 12/18 시작 → 12/16 23:59 KST = 12/16 14:59 UTC
+    assert.equal(meeting.placeDeadline, '2026-12-16T14:59:00Z')
+  })
+
+  test('모임장은 날짜를 확정하면서 장소 마감을 정할 수 있다', async () => {
+    const deadline = inDays(5)
+    const { code } = await placeMeeting({ placeDeadline: deadline })
+    assert.equal(Date.parse((await detail(code)).placeDeadline), Math.floor(Date.parse(deadline) / 1000) * 1000)
+    // 정모가 끝난 뒤로는 정할 수 없다
+    const other = await setupMeeting()
+    const { status } = await api('POST', `/meetings/${other.code}/polls/date/confirm`, {
+      body: { startDate: '2026-12-18', placeDeadline: '2026-12-20T00:00:00Z' },
+      token: other.host,
+    })
+    assert.equal(status, 400)
+  })
+
+  test('마감이 지나면 최다 득표 지역 하나로 확정된다', async () => {
+    const { code, host, member } = await placeMeeting()
+    await place(code, ['부산', '강원'], { user: member })
+    await place(code, ['부산'], { token: host })
+    await expirePlace(code)
+    const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.equal(listed.stage, 'DONE')
+    assert.equal(listed.place, '부산')
+    assert.deepEqual(listed.placeTied, [])
+  })
+
+  test('동점이면 동점 지역을 모두 보여 주고, 모임장이 나중에 하나로 정할 수 있다', async () => {
+    const { code, host, member } = await placeMeeting()
+    await place(code, ['부산', '서울'], { user: member })
+    await expirePlace(code)
+    let meeting = await detail(code)
+    assert.equal(meeting.stage, 'DONE')
+    assert.equal(meeting.confirmed.place, null)
+    assert.deepEqual(meeting.confirmed.placeTied, ['서울', '부산'])
+    // 마감 후에는 투표할 수 없다
+    assert.equal((await place(code, ['제주'], { user: member })).status, 409)
+    // 참여자는 정할 수 없고, 모임장은 동점 중 하나로 정한다
+    const { options } = (await api('GET', `/meetings/${code}/polls/place`)).data
+    const busan = options.find((option) => option.label === '부산')
+    const confirm = (body, opts) => api('POST', `/meetings/${code}/polls/place/confirm`, { body, ...opts })
+    assert.equal((await confirm({ optionId: busan.id }, { user: member })).status, 403)
+    assert.equal((await confirm({ optionId: busan.id }, { token: host })).status, 200)
+    meeting = await detail(code)
+    assert.equal(meeting.confirmed.place.label, '부산')
+    assert.deepEqual(meeting.confirmed.placeTied, [])
+    assert.equal((await confirm({ optionId: busan.id }, { token: host })).status, 409)
+  })
+
+  test('아무도 투표하지 않으면 장소 미정으로 닫히고, 모임장이 아무 시·도로나 정할 수 있다', async () => {
+    const { code, host } = await placeMeeting()
+    await expirePlace(code)
+    let meeting = await detail(code)
+    assert.equal(meeting.stage, 'DONE')
+    assert.equal(meeting.confirmed.place, null)
+    assert.deepEqual(meeting.confirmed.placeTied, [])
+    const confirm = (body) => api('POST', `/meetings/${code}/polls/place/confirm`, { body, token: host })
+    assert.equal((await confirm({ region: '강릉' })).status, 400)
+    assert.equal((await confirm({ region: '제주' })).status, 200)
+    meeting = await detail(code)
+    assert.equal(meeting.confirmed.place.label, '제주')
+  })
+
+  test('지금 마감하기, 마감 수정 (모임장 / 관리자)', async () => {
+    const { code, host, member } = await placeMeeting()
+    const editDeadline = (placeDeadline, opts) => api('PATCH', `/meetings/${code}/place-deadline`, { body: { placeDeadline }, ...opts })
+    const deadline = inDays(3)
+    assert.equal((await editDeadline(deadline, { user: member })).status, 403)
+    assert.equal((await editDeadline(inDays(-1), { token: host })).status, 400)
+    assert.equal((await editDeadline('2026-12-20T00:00:00Z', { token: host })).status, 400)
+    assert.equal((await editDeadline(deadline, { token: host })).status, 200)
+    assert.equal(Date.parse((await detail(code)).placeDeadline), Math.floor(Date.parse(deadline) / 1000) * 1000)
+
+    await place(code, ['대구'], { user: member })
+    const close = (opts) => api('POST', `/meetings/${code}/close-place-vote`, opts)
+    assert.equal((await close({ user: member })).status, 403)
+    assert.equal((await close({ admin: adminToken })).status, 200)
+    const meeting = await detail(code)
+    assert.equal(meeting.stage, 'DONE')
+    assert.equal(meeting.confirmed.place.label, '대구')
+    assert.equal((await close({ token: host })).status, 409)
+    assert.equal((await editDeadline(deadline, { token: host })).status, 409)
+  })
+
+  test('일정을 앞당겨 장소 마감이 새 시작일 이후가 되면 새 기본 마감으로 당긴다', async () => {
+    const { code, host } = await placeMeeting({ placeDeadline: '2026-12-17T12:00:00Z' })
+    const edit = (startDate, endDate) => api('PATCH', `/meetings/${code}/dates`, { body: { startDate, endDate }, token: host })
+    // 12/17 21:00 KST 마감인데 일정을 12/15~16 으로 → 12/13 23:59 KST
+    let res = await edit('2026-12-15', '2026-12-16')
+    assert.equal(res.data.placeDeadlineChanged, true)
+    assert.equal((await detail(code)).placeDeadline, '2026-12-13T14:59:00Z')
+    // 마감보다 뒤로 옮기면 그대로
+    res = await edit('2026-12-24', '2026-12-25')
+    assert.equal(res.data.placeDeadlineChanged, false)
+    assert.equal((await detail(code)).placeDeadline, '2026-12-13T14:59:00Z')
+  })
+})
+
 describe('투표 마감', () => {
   test('마감 일시가 없거나 지났으면 모임을 만들 수 없다', async () => {
     const create = (voteDeadline) => api('POST', '/meetings', { body: meetingBody({ voteDeadline }), admin: adminToken })
@@ -733,8 +1029,20 @@ describe('투표 마감', () => {
     assert.equal((await close({ token: host })).status, 409)
   })
 
+  test('모임장 표만 있으면 후보 기간 전체로 확정한다', async () => {
+    const { code } = await setupMeeting()
+    await expireDeadline(code)
+    const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
+    assert.deepEqual([listed.startDate, listed.endDate], ['2026-12-18', '2026-12-20'])
+  })
+
   test('표가 없으면 가장 이른 날 하루로 확정한다 (목록 조회만으로도 정리된다)', async () => {
     const { code } = await setupMeeting()
+    // 모임장 표도 없는 경우 (모임장은 화면에서 후보를 모두 뺄 수 없으므로 DB 로 만든다)
+    await db.query(
+      'DELETE v FROM votes v JOIN polls p ON p.id = v.poll_id JOIN meetings m ON m.id = p.meeting_id WHERE m.code = ?',
+      [code],
+    )
     await expireDeadline(code)
     const listed = (await api('GET', '/meetings')).data.find((item) => item.code === code)
     assert.equal(listed.stage, 'PLACE')

@@ -34,7 +34,7 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <section className="card mx-auto max-w-md">
+    <section className="card mx-auto w-full max-w-md">
       <h2 className="mt-0">새 비밀번호 설정</h2>
       <p className="notice mb-6">
         아이디 <b>{verified.username}</b> 님, 새 비밀번호를 입력해 주세요. 10분 안에 변경해야 해요.

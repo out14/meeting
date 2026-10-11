@@ -10,6 +10,7 @@ import { ConfirmedSummary } from '@src/pages/meeting/ConfirmedSummary'
 import { DatePollSection } from '@src/pages/meeting/DatePollSection'
 import { InviteLink } from '@src/pages/meeting/InviteLink'
 import { JoinForm } from '@src/pages/meeting/JoinForm'
+import { MeetingDatesEditor } from '@src/pages/meeting/MeetingDatesEditor'
 import { MemberList } from '@src/pages/meeting/MemberList'
 import { PlacePollSection } from '@src/pages/meeting/PlacePollSection'
 import { StageSteps } from '@src/pages/meeting/StageSteps'
@@ -26,7 +27,7 @@ export function MeetingPage() {
 
   if (error) {
     return (
-      <section className="card mx-auto max-w-md text-center">
+      <section className="card mx-auto w-full max-w-md text-center">
         <h2>{error instanceof HttpError && error.status === 404 ? '모임을 찾을 수 없어요' : '문제가 생겼어요'}</h2>
         <p className="mb-4">{getErrorMessage(error)}</p>
         <Link className="link" to="/">
@@ -45,7 +46,7 @@ export function MeetingPage() {
 
   if (!meeting.me && !admin) {
     return (
-      <div className="mx-auto flex max-w-md flex-col gap-3">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-3">
         {backToCalendar}
         <AdminMeetingBar meeting={meeting} />
         <JoinForm meeting={meeting} />
@@ -58,7 +59,7 @@ export function MeetingPage() {
   const canParticipate = !!me
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       {backToCalendar}
       <AdminMeetingBar meeting={meeting} />
       <section className="card">
@@ -70,6 +71,11 @@ export function MeetingPage() {
           action={(isHost || !!admin) && <CloseVoteButton code={code} />}
         />
         <InviteLink code={meeting.code} />
+        {isHost && (
+          <div className="mt-4">
+            <MeetingDatesEditor key={`${meeting.stage}-${meeting.candidateStart}`} meeting={meeting} />
+          </div>
+        )}
       </section>
 
       {!me && <p className="notice">관리자로 보고 있어요. 투표와 제안은 모임 참여자만 할 수 있어요.</p>}
@@ -80,7 +86,16 @@ export function MeetingPage() {
       <ConfirmedSummary meeting={meeting} />
       {/* 진행 중인 투표를 위에: 장소 투표 단계면 장소 → 날짜 */}
       {meeting.stage !== 'VOTE' && (
-        <PlacePollSection code={code} stage={meeting.stage} isHost={isHost} canParticipate={canParticipate} />
+        <PlacePollSection
+          code={code}
+          stage={meeting.stage}
+          isHost={isHost}
+          canParticipate={canParticipate}
+          isAdmin={!!admin}
+          placeDeadline={meeting.placeDeadline}
+          scheduleEnd={meeting.confirmed.schedule?.endDate ?? ''}
+          placeTied={meeting.confirmed.placeTied}
+        />
       )}
       <DatePollSection
         code={code}
@@ -88,7 +103,7 @@ export function MeetingPage() {
         isHost={isHost}
         canParticipate={canParticipate}
         candidateStart={meeting.candidateStart}
-        candidateEnd={meeting.candidateEnd}
+        voteDeadline={meeting.voteDeadline}
         schedule={meeting.confirmed.schedule}
       />
     </div>

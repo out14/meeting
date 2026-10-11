@@ -3,7 +3,7 @@ import { Router } from 'express'
 import db from '../db/db.js'
 import { loginAdmin, requireAdmin } from '../lib/adminAuth.js'
 import { HttpError } from '../lib/httpError.js'
-import { DEADLINE_COLUMN, settleExpiredMeetings } from '../lib/meetingFlow.js'
+import { DEADLINE_COLUMN, loadTiedPlaces, settleExpiredMeetings } from '../lib/meetingFlow.js'
 import { hashPassword } from '../lib/password.js'
 
 // 임시 비밀번호: 헷갈리는 문자(0/O, 1/l/I)를 뺀 10자
@@ -38,7 +38,7 @@ router.get('/users', requireAdmin, async (_req, res) => {
 router.get('/meetings', requireAdmin, async (_req, res) => {
   await settleExpiredMeetings()
   const [meetings] = await db.query(
-    `SELECT m.code, m.title, m.stage, m.candidate_start AS candidateStart, m.candidate_end AS candidateEnd,
+    `SELECT m.id, m.code, m.title, m.stage, m.candidate_start AS candidateStart, m.candidate_end AS candidateEnd,
             ${DEADLINE_COLUMN.replace('vote_deadline', 'm.vote_deadline')} AS voteDeadline,
             m.schedule_start AS scheduleStart, m.schedule_end AS scheduleEnd, m.created_at AS createdAt,
             host.nickname AS hostNickname, hu.username AS hostUsername,
@@ -54,7 +54,8 @@ router.get('/meetings', requireAdmin, async (_req, res) => {
        LEFT JOIN users hu ON hu.id = host.user_id
       ORDER BY m.created_at DESC, m.id DESC`,
   )
-  res.json(meetings)
+  const tiedPlaces = await loadTiedPlaces()
+  res.json(meetings.map(({ id, ...meeting }) => ({ ...meeting, placeTied: tiedPlaces.get(id) ?? [] })))
 })
 
 // 선택한 모임 일괄 삭제. 참여자·투표 기록은 FK CASCADE 로 함께 지워진다

@@ -5,6 +5,7 @@ import { useLogin, useUser } from '@src/api/hooks/useUser'
 import { Button } from '@src/components/Button'
 import { TextField } from '@src/components/TextField'
 import { readRedirect, withRedirect } from '@src/pages/auth/redirect'
+import logo from '@src/assets/images/logo-cutout.png'
 
 // 회원 로그인 화면
 export function LoginPage() {
@@ -26,7 +27,8 @@ export function LoginPage() {
   }
 
   return (
-    <section className="card mx-auto max-w-md">
+    <section className="card mx-auto w-full max-w-md">
+      <img src={logo} alt="요정" className="mx-auto mb-4 block w-40" />
       <h2 className="mt-0">로그인</h2>
       <p className="mb-6">로그인하면 초대받은 모임에 참여하고 투표할 수 있어요.</p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>

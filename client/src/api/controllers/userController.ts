@@ -64,6 +64,8 @@ export interface MyMeeting {
   createdAt: string
   role: MemberRole
   memberCount: number
+  // 확정된 장소 (시·도)
+  place: string | null
   votes: { date: MyVote[]; place: MyVote[] }
 }
 

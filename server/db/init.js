@@ -3,6 +3,7 @@ import 'dotenv/config'
 import { readFile } from 'node:fs/promises'
 import mysql from 'mysql2/promise'
 import { dbConfig, dbName } from './db.js'
+import { defaultPlaceDeadline } from '../lib/placeDeadline.js'
 
 const reset = process.argv.includes('--reset')
 const schema = await readFile(new URL('./schema.sql', import.meta.url), 'utf8')
@@ -127,6 +128,17 @@ async function migrate(conn) {
   if (!(await hasColumn(conn, 'votes', 'comment'))) {
     await conn.query('ALTER TABLE votes ADD COLUMN comment VARCHAR(300) NULL AFTER member_id')
     console.log('마이그레이션: votes.comment 추가')
+  }
+
+  // 장소 투표 마감: 이미 장소 투표 중인 모임은 확정 일정 기준 기본 마감으로 채운다
+  if (!(await hasColumn(conn, 'meetings', 'place_deadline'))) {
+    await conn.query('ALTER TABLE meetings ADD COLUMN place_deadline DATETIME NULL AFTER schedule_end')
+    const [placing] = await conn.query("SELECT id, DATE_FORMAT(schedule_start, '%Y-%m-%d') AS start FROM meetings WHERE stage = 'PLACE'")
+    for (const { id, start } of placing) {
+      const deadline = defaultPlaceDeadline(start).toISOString().slice(0, 19).replace('T', ' ')
+      await conn.query('UPDATE meetings SET place_deadline = ? WHERE id = ?', [deadline, id])
+    }
+    console.log(`마이그레이션: meetings.place_deadline 추가 (장소 투표 중 ${placing.length}개 기본 마감)`)
   }
 
   // 회원 참여: 참여자에 user_id 연결, 회원은 참여자 토큰 없이 식별하므로 token_hash 는 NULL 허용

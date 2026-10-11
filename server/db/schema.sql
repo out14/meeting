@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS meetings (
   -- 확정된 일정 (날짜 투표를 연속된 날짜 범위로 확정)
   schedule_start  DATE NULL,
   schedule_end    DATE NULL,
+  -- 장소 투표 마감 (UTC). 날짜가 확정될 때 정하고(기본 시작일 D-2 23:59), 지나면 최다 득표 지역으로 확정한다
+  place_deadline  DATETIME NULL,
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

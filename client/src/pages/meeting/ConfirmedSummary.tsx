@@ -9,9 +9,10 @@ const format = (date: Date) =>
 
 // 날짜가 확정되면 일정, 장소까지 확정되면 최종 일정
 export function ConfirmedSummary({ meeting }: { meeting: Meeting }) {
-  const { schedule, place } = meeting.confirmed
+  const { schedule, place, placeTied } = meeting.confirmed
   if (!schedule) return null
-  const isDone = meeting.stage === 'DONE'
+  // 장소까지 정해져야 최종 일정 (동점·무투표로 마감됐으면 장소 미정)
+  const isDone = meeting.stage === 'DONE' && !!place
   const { startDate, endDate } = schedule
 
   return (
@@ -26,8 +27,12 @@ export function ConfirmedSummary({ meeting }: { meeting: Meeting }) {
           📍 {place.label}
           {place.memo && <span className="ml-2 text-sm font-normal">{place.memo}</span>}
         </p>
+      ) : placeTied.length ? (
+        <p className="mt-2 font-medium text-[var(--text-h)]">📍 {placeTied.join(' · ')} (동점) · 모임장이 한 곳으로 정하면 확정돼요</p>
+      ) : meeting.stage === 'DONE' ? (
+        <p className="mt-2 font-medium text-[var(--text-h)]">📍 장소 미정</p>
       ) : (
-        meeting.stage === 'PLACE' && <p className="mt-2 text-sm">이제 장소 투표를 진행해요.</p>
+        <p className="mt-2 text-sm">이제 장소 투표를 진행해요.</p>
       )}
     </section>
   )

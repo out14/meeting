@@ -25,7 +25,7 @@ export function AdminUsersPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <section className="card">
         <h2 className="mt-0">회원 관리</h2>
         <p>비밀번호를 잊은 회원에게 임시 비밀번호를 발급해 전달해 주세요. 회원이 로그인하면 비밀번호 변경을 안내해요.</p>

@@ -42,6 +42,8 @@ export interface AdminMeeting {
   placeVoterCount: number
   // 확정된 장소 (시·도)
   place: string | null
+  // 장소 투표가 동점으로 끝난 지역들
+  placeTied: string[]
 }
 
 export const adminController = {

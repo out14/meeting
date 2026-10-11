@@ -37,7 +37,7 @@ export function SignupPage() {
   }
 
   return (
-    <section className="card mx-auto max-w-md">
+    <section className="card mx-auto w-full max-w-md">
       <h2 className="mt-0">회원가입</h2>
       <p className="mb-6">모임에서는 닉네임으로 표시돼요.</p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>

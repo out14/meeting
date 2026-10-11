@@ -1,10 +1,17 @@
 import { Router } from 'express'
 import db, { withTransaction } from '../db/db.js'
 import { requireHost, requireMember } from '../lib/auth.js'
-import { readDateRange } from '../lib/dates.js'
+import { readDateRange, readDates } from '../lib/dates.js'
 import { isRegion, REGIONS } from '../lib/regions.js'
 import { HttpError } from '../lib/httpError.js'
-import { confirmSchedule, MAX_SCHEDULE_DAYS, POLL_STAGE } from '../lib/meetingFlow.js'
+import {
+  confirmPlace,
+  confirmSchedule,
+  MAX_SCHEDULE_DAYS,
+  POLL_STAGE,
+  readPlaceDeadline,
+  setHostCandidates,
+} from '../lib/meetingFlow.js'
 
 const router = Router()
 
@@ -105,12 +112,34 @@ router.post('/:type/places', requireMember, async (req, res) => {
   res.status(201).json({ optionIds })
 })
 
-// 날짜 제안 (참여자 누구나): 후보 기간 밖의 날짜도 선택지로 추가하고, 제안한 사람의 투표로 찍는다
+// 날짜 제안 (참여자): 후보 기간 밖의 날짜도 선택지로 추가하고, 제안한 사람의 투표로 찍는다 (모임장은 후보 추가)
 // 이미 있는 날짜는 새로 만들지 않고 기존 선택지에 투표한다
 router.post('/:type/options', requireMember, async (req, res) => {
   if (req.poll.type !== 'DATE') throw new HttpError(400, '날짜 투표에만 날짜를 제안할 수 있습니다.')
   assertEditable(req)
   const dates = readDateRange(req.body?.startDate, req.body?.endDate ?? req.body?.startDate, '제안 기간')
+
+  // 모임장이 날짜를 더하면 제안이 아니라 후보 날짜 추가다
+  if (req.member.role === 'HOST') {
+    const optionIds = await withTransaction(async (conn) => {
+      const [current] = await conn.query(
+        'SELECT date_value AS date FROM poll_options WHERE poll_id = ? AND proposed_by IS NULL',
+        [req.poll.id],
+      )
+      await setHostCandidates(conn, {
+        meetingId: req.meeting.id,
+        pollId: req.poll.id,
+        hostMemberId: req.member.id,
+        dates: [...readDates(current.map((option) => option.date)), ...dates.filter((date) => !current.some((c) => c.date === date.value))],
+      })
+      const [options] = await conn.query('SELECT id FROM poll_options WHERE poll_id = ? AND date_value IN (?)', [
+        req.poll.id,
+        dates.map((date) => date.value),
+      ])
+      return options.map((option) => option.id)
+    })
+    return res.status(201).json({ optionIds })
+  }
 
   const optionIds = await withTransaction(async (conn) => {
     const [existing] = await conn.query('SELECT date_value AS date FROM poll_options WHERE poll_id = ? FOR UPDATE', [
@@ -142,9 +171,69 @@ router.post('/:type/options', requireMember, async (req, res) => {
   res.status(201).json({ optionIds })
 })
 
+// 날짜 투표를 날짜로 저장: 달력에서 고른 날짜들로 내 투표를 통째로 교체한다 (빈 배열이면 투표 취소)
+// 선택지에 없는 날짜는 내가 제안한 날짜로 추가되고, 아무도 투표하지 않게 된 내 제안 날짜는 지운다
+async function voteDates(req, dates) {
+  await withTransaction(async (conn) => {
+    const [existing] = await conn.query('SELECT date_value AS date FROM poll_options WHERE poll_id = ? FOR UPDATE', [
+      req.poll.id,
+    ])
+    const existingDates = new Set(existing.map((option) => option.date))
+    const added = dates.filter((date) => !existingDates.has(date.value))
+    if (existing.length + added.length > MAX_DATE_OPTIONS) {
+      throw new HttpError(400, `날짜 선택지는 최대 ${MAX_DATE_OPTIONS}개까지 만들 수 있습니다.`)
+    }
+    if (added.length) {
+      await conn.query('INSERT INTO poll_options (poll_id, label, date_value, proposed_by) VALUES ?', [
+        added.map((date) => [req.poll.id, date.label, date.value, req.member.id]),
+      ])
+    }
+
+    await conn.query('DELETE FROM votes WHERE poll_id = ? AND member_id = ?', [req.poll.id, req.member.id])
+    if (dates.length) {
+      await conn.query(
+        'INSERT INTO votes (poll_id, option_id, member_id) SELECT poll_id, id, ? FROM poll_options WHERE poll_id = ? AND date_value IN (?)',
+        [req.member.id, req.poll.id, dates.map((date) => date.value)],
+      )
+    }
+    // 내가 제안했는데 이제 표가 하나도 없는 날짜는 캘린더에서도 사라지게 지운다
+    await conn.query(
+      `DELETE o FROM poll_options o LEFT JOIN votes v ON v.option_id = o.id
+        WHERE o.poll_id = ? AND o.proposed_by = ? AND v.id IS NULL`,
+      [req.poll.id, req.member.id],
+    )
+  })
+}
+
+// { optionIds } 로 보낸 날짜 투표를 날짜 목록으로 바꾼다
+async function datesOfOptions(req) {
+  const optionIds = Array.isArray(req.body?.optionIds) ? req.body.optionIds.map(Number) : null
+  if (!optionIds || optionIds.some((id) => !Number.isInteger(id))) throw new HttpError(400, '선택지를 확인해 주세요.')
+  if (!optionIds.length) return []
+  const [options] = await db.query('SELECT date_value AS date FROM poll_options WHERE poll_id = ? AND id IN (?)', [
+    req.poll.id,
+    optionIds,
+  ])
+  if (options.length !== new Set(optionIds).size) throw new HttpError(400, '존재하지 않는 선택지가 포함되어 있습니다.')
+  return readDates(options.map((option) => option.date))
+}
+
 // 투표 / 투표 변경: 내 투표를 전달한 선택지로 통째로 교체한다 (빈 배열이면 투표 취소)
+// 날짜 투표는 { dates: ['YYYY-MM-DD', ...] } 로도 보낼 수 있다 (후보 기간 밖 날짜 포함)
 router.put('/:type/votes', requireMember, async (req, res) => {
   assertEditable(req)
+  // 날짜 투표에서 모임장이 고른 날짜는 후보 날짜 '수정'이다 (다른 참여자는 투표 + 후보 밖 날짜는 '제시')
+  if (req.poll.type === 'DATE' && req.member.role === 'HOST') {
+    const dates = req.body?.dates !== undefined ? readDates(req.body.dates) : await datesOfOptions(req)
+    await withTransaction((conn) =>
+      setHostCandidates(conn, { meetingId: req.meeting.id, pollId: req.poll.id, hostMemberId: req.member.id, dates }),
+    )
+    return res.json({ ok: true })
+  }
+  if (req.poll.type === 'DATE' && req.body?.dates !== undefined) {
+    await voteDates(req, readDates(req.body.dates))
+    return res.json({ ok: true })
+  }
 
   const optionIds = Array.isArray(req.body?.optionIds) ? [...new Set(req.body.optionIds.map(Number))] : null
   if (!optionIds || optionIds.some((id) => !Number.isInteger(id))) throw new HttpError(400, '선택지를 확인해 주세요.')
@@ -174,7 +263,9 @@ router.put('/:type/votes', requireMember, async (req, res) => {
 // - 날짜: 연속된 날짜 범위(startDate ~ endDate)로 확정 → 일정이 되고 장소 투표로 넘어간다
 // - 장소: 선택지 하나(optionId)로 확정 → 일정 확정(DONE)
 router.post('/:type/confirm', requireHost, async (req, res) => {
-  assertEditable(req)
+  // 장소는 마감 후 동점·무투표로 확정되지 않았으면 모임장이 나중에 정할 수 있다
+  const isUnresolvedPlace = req.poll.type === 'PLACE' && req.poll.status === 'CLOSED' && !req.poll.confirmedOptionId
+  if (!isUnresolvedPlace) assertEditable(req)
 
   await withTransaction(async (conn) => {
     if (req.poll.type === 'DATE') {
@@ -191,26 +282,41 @@ router.post('/:type/confirm', requireHost, async (req, res) => {
       if (days < 1) throw new HttpError(400, '종료일은 시작일과 같거나 이후여야 합니다.')
       if (days > MAX_SCHEDULE_DAYS) throw new HttpError(400, `일정은 최대 ${MAX_SCHEDULE_DAYS}일까지 확정할 수 있습니다.`)
 
+      // 장소 투표 마감: 모임장이 확정하면서 정할 수 있다 (없으면 시작일 D-2 23:59)
+      const placeDeadline = req.body?.placeDeadline ? readPlaceDeadline(req.body.placeDeadline, endDate) : null
       await confirmSchedule(conn, {
         meetingId: req.meeting.id,
         pollId: req.poll.id,
         startOptionId: start.id,
         startDate,
         endDate,
+        placeDeadline,
       })
       return
     }
 
-    const optionId = Number(req.body?.optionId)
+    // 장소: 선택지(optionId) 또는 시·도 이름(region). 아무도 고르지 않은 시·도면 선택지로 추가한다 (장소 미정일 때)
+    const [[poll]] = await conn.query('SELECT status, confirmed_option_id AS confirmedOptionId FROM polls WHERE id = ? FOR UPDATE', [
+      req.poll.id,
+    ])
+    // 동시에 두 번 확정되는 것을 막는다
+    if (poll.confirmedOptionId) throw new HttpError(409, '이미 확정된 투표입니다.')
+    let optionId = Number(req.body?.optionId)
+    if (req.body?.region !== undefined) {
+      if (!isRegion(req.body.region)) throw new HttpError(400, '확정할 시·도를 골라 주세요.')
+      await conn.query('INSERT IGNORE INTO poll_options (poll_id, label, sort_order) SELECT ?, ?, ? FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM poll_options WHERE poll_id = ? AND label = ?)', [
+        req.poll.id,
+        req.body.region,
+        REGIONS.indexOf(req.body.region),
+        req.poll.id,
+        req.body.region,
+      ])
+      const [[found]] = await conn.query('SELECT id FROM poll_options WHERE poll_id = ? AND label = ?', [req.poll.id, req.body.region])
+      optionId = found.id
+    }
     const [[option]] = await conn.query('SELECT id FROM poll_options WHERE id = ? AND poll_id = ?', [optionId, req.poll.id])
     if (!option) throw new HttpError(400, '확정할 선택지를 골라 주세요.')
-    // 동시에 두 번 확정되는 것을 막기 위해 OPEN 상태일 때만 갱신한다
-    const [result] = await conn.query(
-      "UPDATE polls SET status = 'CLOSED', confirmed_option_id = ? WHERE id = ? AND status = 'OPEN'",
-      [optionId, req.poll.id],
-    )
-    if (!result.affectedRows) throw new HttpError(409, '이미 확정된 투표입니다.')
-    await conn.query("UPDATE meetings SET stage = 'DONE' WHERE id = ?", [req.meeting.id])
+    await confirmPlace(conn, { meetingId: req.meeting.id, pollId: req.poll.id, optionId })
   })
 
   res.json({ ok: true })

@@ -151,7 +151,9 @@ router.get('/me/meetings', requireUser, async (req, res) => {
   const [meetings] = await db.query(
     `SELECT m.code, m.title, m.stage, m.candidate_start AS candidateStart, m.candidate_end AS candidateEnd,
             m.created_at AS createdAt, mm.role, mm.id AS memberId,
-            (SELECT COUNT(*) FROM meeting_members x WHERE x.meeting_id = m.id) AS memberCount
+            (SELECT COUNT(*) FROM meeting_members x WHERE x.meeting_id = m.id) AS memberCount,
+            (SELECT o.label FROM polls p JOIN poll_options o ON o.id = p.confirmed_option_id
+              WHERE p.meeting_id = m.id AND p.type = 'PLACE') AS place
        FROM meeting_members mm JOIN meetings m ON m.id = mm.meeting_id
       WHERE mm.user_id = ?
       ORDER BY m.created_at DESC, m.id DESC`,

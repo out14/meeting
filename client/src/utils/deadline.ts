@@ -21,3 +21,15 @@ export function formatRemaining(ms: number) {
 export function toLocalInputValue(date: Date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
 }
+
+// 장소 투표 기본 마감: 확정 일정 시작일 D-2 23:59 → 너무 가까우면 D-1 23:59 → 그래도 24시간이 안 남으면 지금부터 24시간 뒤
+// (서버의 defaultPlaceDeadline 과 같은 규칙, 사용자 시간대 기준)
+export function defaultPlaceDeadline(startDate: string, now = Date.now()) {
+  const earliest = now + 24 * 3_600_000
+  for (const days of [2, 1]) {
+    const date = new Date(`${startDate}T23:59`)
+    date.setDate(date.getDate() - days)
+    if (date.getTime() >= earliest) return date
+  }
+  return new Date(earliest)
+}

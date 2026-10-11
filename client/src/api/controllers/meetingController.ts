@@ -33,12 +33,16 @@ export interface Meeting {
   candidateEnd: string
   // 날짜 투표 마감 (ISO, UTC)
   voteDeadline: string
+  // 장소 투표 마감 (ISO, UTC). 날짜가 확정되면 정해진다
+  placeDeadline: string | null
   createdAt: string
   members: Member[]
   me: Member | null
   confirmed: {
     schedule: Schedule | null
     place: ConfirmedPlace | null
+    // 장소 투표가 동점으로 끝나 확정되지 않은 지역들 (모임장이 하나로 정할 수 있다)
+    placeTied: string[]
   }
 }
 
@@ -54,6 +58,13 @@ export interface MeetingSummary {
   memberCount: number
   startDate: string | null
   endDate: string | null
+  // 날짜 투표 중인 후보 날짜 (모임장이 정한 날짜, 떨어져 있을 수 있다)
+  candidateDates: string[]
+  // 확정된 장소 (시·도)
+  place: string | null
+  // 장소 투표가 동점으로 끝난 지역들
+  placeTied: string[]
+  placeDeadline: string | null
   // 날짜 투표 중일 때 참여자가 제안한 날짜 (후보 기간 밖)
   proposals: { date: string; proposedBy: string }[]
 }
@@ -85,6 +96,17 @@ export const meetingController = {
     httpClient.post(`/meetings/${code}/close-vote`, undefined, {
       headers: { ...memberTokenConfig(code)?.headers, ...adminTokenConfig()?.headers },
     }),
+  // 모임장 또는 관리자: 장소 투표를 지금 마감 (최다 득표 지역으로 확정, 동점·무투표면 장소 미정)
+  closePlaceVote: (code: string) =>
+    httpClient.post(`/meetings/${code}/close-place-vote`, undefined, {
+      headers: { ...memberTokenConfig(code)?.headers, ...adminTokenConfig()?.headers },
+    }),
+  // 모임장: 장소 투표 마감 수정
+  updatePlaceDeadline: (code: string, placeDeadline: string) =>
+    httpClient.patch(`/meetings/${code}/place-deadline`, { placeDeadline }, memberTokenConfig(code)),
+  // 모임장: 날짜 수정. 투표 중이면 후보 기간(+ 투표 마감), 확정 후면 확정 일정
+  updateDates: (code: string, body: { startDate: string; endDate: string; voteDeadline?: string }) =>
+    httpClient.patch<{ ok: true; placeDeadlineChanged?: boolean }>(`/meetings/${code}/dates`, body, memberTokenConfig(code)),
   // 모임장 또는 관리자
   remove: (code: string) =>
     httpClient.delete(`/meetings/${code}`, {

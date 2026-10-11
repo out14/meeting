@@ -96,7 +96,7 @@ export function CreateMeetingPage() {
   const isExpired = createMeeting.error instanceof HttpError && createMeeting.error.status === 401
 
   return (
-    <section className="card mx-auto max-w-md">
+    <section className="card mx-auto w-full max-w-md">
       <h2 className="mt-0">새 모임 만들기</h2>
       <p className="mb-6">모임을 만들고 초대 링크를 친구들에게 보내세요. 날짜는 투표로, 장소는 그다음에 정해요.</p>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
@@ -133,7 +133,7 @@ export function CreateMeetingPage() {
             <p className="error-text">{rangeError}</p>
           ) : (
             <p className="text-sm">
-              {days > 0 ? `${days}일이 날짜 투표 후보로 등록돼요.` : '이 기간의 모든 날짜가 날짜 투표 후보가 돼요. (최대 31일)'}
+              {days > 0 ? `${days}일이 날짜 투표 후보로 등록되고, 모임장은 이 날짜들에 자동으로 투표돼요. (투표 화면에서 바꿀 수 있어요)` : '이 기간의 모든 날짜가 날짜 투표 후보가 돼요. (최대 31일)'}
             </p>
           )}
         </fieldset>

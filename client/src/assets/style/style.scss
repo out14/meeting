@@ -30,10 +30,27 @@ h3 {
   gap: 12px;
   padding: 16px 24px;
   border-bottom: 1px solid var(--border);
+  background: var(--surface);
 
   h1 {
     font-size: 20px;
     margin: 0;
+  }
+
+  // 로고 + 서비스 이름
+  .app-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: inherit;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .app-logo-image {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
   }
 
   &-actions {
@@ -50,8 +67,9 @@ h3 {
     color: var(--text-h);
 
     &[href]:hover {
-      color: var(--accent);
       text-decoration: underline;
+      text-decoration-color: var(--accent);
+      text-decoration-thickness: 2px;
     }
   }
 
@@ -78,7 +96,11 @@ h3 {
 }
 
 .link {
-  color: var(--accent);
+  color: var(--text-h);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 button.link {
@@ -86,7 +108,6 @@ button.link {
   border: 0;
   background: none;
   font: inherit;
-  text-decoration: underline;
   cursor: pointer;
 }
 
@@ -94,7 +115,7 @@ button.link {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
-  background: var(--bg);
+  background: var(--card-bg);
 
   &-highlight {
     border-color: var(--accent);
@@ -115,7 +136,7 @@ button.link {
   &-input {
     font: inherit;
     color: var(--text-h);
-    background: var(--bg);
+    background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 8px 12px;
@@ -186,7 +207,7 @@ button.link {
   &.done .step-index {
     background: var(--accent-bg);
     border-color: var(--accent);
-    color: var(--accent);
+    color: var(--text-h);
   }
 
   &.current {
@@ -194,9 +215,9 @@ button.link {
     font-weight: 600;
 
     .step-index {
-      background: var(--accent);
+      background: var(--accent-fill);
       border-color: var(--accent);
-      color: #fff;
+      color: var(--text-h);
     }
   }
 }
@@ -211,8 +232,11 @@ button.link {
   color: var(--text-h);
 
   &-me {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--sub-accent);
     font-size: 12px;
-    color: var(--accent);
+    color: var(--text-h);
   }
 
   &-sm {
@@ -223,7 +247,7 @@ button.link {
   &-confirmed {
     border-color: var(--accent);
     background: var(--accent-bg);
-    color: var(--accent);
+    color: var(--text-h);
   }
 }
 
@@ -236,8 +260,29 @@ button.link {
 
   &.done {
     border-color: var(--accent);
-    color: var(--accent);
+    background: var(--accent-bg);
+    color: var(--text-h);
   }
+}
+
+// 모임 상태 태그 (색 점 + 이름). 색 점은 캘린더 범례(.calendar-legend)와 같다
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-h);
+  white-space: nowrap;
+}
+
+// 목록 제목 앞 색 점
+.list-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .my-votes {
@@ -287,8 +332,8 @@ button.link {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
+  background: var(--sub-accent);
+  color: var(--text-h);
 }
 
 .poll-option {
@@ -298,6 +343,7 @@ button.link {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--card-bg);
 
   &.top,
   &.confirmed {
@@ -314,13 +360,13 @@ button.link {
   height: 6px;
   margin: 6px 0 4px;
   border-radius: 3px;
-  background: var(--border);
+  background: var(--surface);
   overflow: hidden;
 
   span {
     display: block;
     height: 100%;
-    background: var(--accent);
+    background: var(--sub-accent);
     transition: width 0.3s;
   }
 }
@@ -339,13 +385,13 @@ button.link {
   }
 
   &-primary {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
+    background: var(--primary);
+    color: var(--on-primary);
+    border-color: var(--primary);
   }
 
   &-secondary {
-    background: transparent;
+    background: var(--card-bg);
     color: var(--text-h);
   }
 
@@ -355,11 +401,13 @@ button.link {
   }
 
   &-danger {
+    background: var(--card-bg);
     color: var(--danger);
     border-color: var(--danger);
   }
 
   &-ghost {
+    background: transparent;
     border-color: transparent;
     color: var(--text);
   }
@@ -404,7 +452,7 @@ fieldset {
   margin: 0 auto;
 
   @media (min-width: 960px) {
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: 300px minmax(0, 1fr);
     align-items: start;
   }
 }
@@ -435,7 +483,7 @@ fieldset {
     }
 
     &.sat {
-      color: var(--accent);
+      color: var(--saturday);
     }
   }
 
@@ -454,8 +502,9 @@ fieldset {
     }
 
     &.today .calendar-date {
-      background: var(--accent);
-      color: #fff;
+      background: var(--accent-fill);
+      color: var(--text-h);
+      font-weight: 600;
     }
   }
 
@@ -486,13 +535,14 @@ fieldset {
   // 일정 확정 / 날짜만 확정 / 후보 기간 순으로 진하게 → 연하게
   &-event,
   &-legend {
+    // 확정된 일정은 중요 날짜이므로 버터색으로 강조
     &.confirmed {
-      color: #fff;
-      background: var(--accent);
+      color: var(--text-h);
+      background: var(--highlight);
     }
 
     &.date {
-      color: var(--accent);
+      color: var(--text-h);
       background: var(--accent-bg);
       border: 1px dashed var(--accent);
     }
@@ -545,6 +595,7 @@ fieldset {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--card-bg);
   text-decoration: none;
 
   &:hover {
@@ -575,9 +626,17 @@ fieldset {
   }
 
   &-title {
-    margin: 0 0 8px;
+    margin: 0;
     font-weight: 600;
     color: var(--text-h);
+  }
+
+  // 이전 달 / 다음 달
+  &-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
   }
 
   &-grid {
@@ -595,7 +654,7 @@ fieldset {
     }
 
     &.sat {
-      color: var(--accent);
+      color: var(--saturday);
     }
   }
 
@@ -608,7 +667,7 @@ fieldset {
     padding: 4px 0;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--bg);
+    background: var(--card-bg);
     color: var(--text-h);
     font: inherit;
     cursor: pointer;
@@ -633,19 +692,31 @@ fieldset {
     }
 
     &.selected {
-      background: var(--accent);
+      background: var(--accent-fill);
       border-color: var(--accent);
-      color: #fff;
+      color: var(--text-h);
     }
 
     &.confirmed {
-      outline: 2px solid var(--accent);
+      outline: 2px solid var(--text-h);
       outline-offset: 1px;
     }
 
-    // 참여자가 제안한 날짜
+    // 참여자가 제안한 날짜 (후보 기간 밖)
     &.proposed:not(.selected) {
       border-style: dashed;
+    }
+
+    &.proposed.selected {
+      border-style: dashed;
+      border-color: var(--text-h);
+    }
+
+    // 선택지가 없는 날짜: 눌러서 새로 고를 수 있다
+    &.free {
+      background: transparent;
+      border-color: transparent;
+      color: var(--text);
     }
   }
 
@@ -676,10 +747,10 @@ fieldset {
   margin-left: 6px;
   padding: 0 6px;
   line-height: 16px;
-  border: 1px dashed var(--accent);
+  border: 1px dashed var(--sub-accent);
   border-radius: 999px;
   font-size: 11px;
-  color: var(--accent);
+  color: var(--text-h);
 }
 
 .deadline {
@@ -691,7 +762,7 @@ fieldset {
   margin: 0 0 12px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: var(--accent-bg);
+  background: var(--highlight-bg);
   color: var(--text-h);
   font-size: 14px;
 
@@ -703,7 +774,7 @@ fieldset {
 
   &-remaining {
     font-weight: 600;
-    color: var(--accent);
+    color: var(--text-h);
   }
 
   &.soon .deadline-remaining {
@@ -731,7 +802,7 @@ fieldset {
 
   &:hover {
     border-color: var(--accent);
-    color: var(--accent);
+    background: var(--card-bg);
   }
 }
 
@@ -767,12 +838,13 @@ fieldset {
     cursor: pointer;
     transition: fill 0.15s;
 
+    // 득표 수만큼 진해지는 분홍 (투표 포인트)
     &[data-voted] {
-      fill: var(--accent);
+      fill: var(--sub-accent);
     }
 
     &:not(.disabled):hover {
-      fill: var(--accent);
+      fill: var(--accent-fill);
       fill-opacity: 0.45;
     }
 
@@ -783,7 +855,7 @@ fieldset {
     }
 
     &.selected {
-      fill: var(--accent);
+      fill: var(--accent-fill);
       fill-opacity: 1;
     }
 
@@ -821,7 +893,7 @@ fieldset {
   padding: 4px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--bg);
+  background: var(--card-bg);
   color: var(--text-h);
   font: inherit;
   font-size: 14px;
@@ -836,13 +908,13 @@ fieldset {
   }
 
   &.selected {
-    background: var(--accent);
+    background: var(--accent-fill);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--text-h);
   }
 
   &.confirmed {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--text-h);
     outline-offset: 1px;
   }
 
@@ -867,7 +939,7 @@ fieldset {
   li {
     padding: 10px 12px;
     border-radius: 8px;
-    background: var(--candidate-bg);
+    background: var(--surface);
     font-size: 14px;
   }
 
@@ -915,4 +987,31 @@ fieldset {
 
 .table tr.row-selected td {
   background: var(--accent-bg);
+}
+
+// 메인 상태별 목록: 일정 미정 / 장소 미정 / 확정된 일정
+// 넓은 화면에서는 캘린더 왼쪽 (마크업은 캘린더 다음이라 좁은 화면에서는 캘린더가 먼저 보인다)
+.home-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  @media (min-width: 960px) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+
+.meeting-item-past {
+  opacity: 0.6;
+}
+
+.past-schedules {
+  margin-top: 12px;
+
+  summary {
+    cursor: pointer;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
 }
